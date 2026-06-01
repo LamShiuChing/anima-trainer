@@ -58,7 +58,7 @@ finetune:                        # diffusion-pipe anima.toml (FULL finetune, not
   caption_dropout_percent: 0.05  # CFG: % steps trained with empty caption
   dit_file: anima-base-v1.0.safetensors
   vae_file: qwen_image_vae.safetensors
-  qwen_file: qwen_3_06b_base.safetensors
+  qwen_file: Qwen3-0.6B-Base    # HF DIR (loader needs tokenizer+config, not a single .safetensors); from Qwen/Qwen3-0.6B-Base
 
 models:                          # Anima training assets pulled by download_models.ps1
   hf_repo: circlestone-labs/Anima

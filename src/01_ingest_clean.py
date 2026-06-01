@@ -31,6 +31,18 @@ def is_too_small(path, min_size):
     return min(w, h) < min_size
 
 
+def drop_reason(corrupt, too_small, blurry, drop_small, drop_blurry):
+    """Decide the drop reason given heuristic results + which heuristics are enabled.
+    corrupt always drops (would crash the trainer). small/blurry only drop if their flag is on."""
+    if corrupt:
+        return "corrupt"
+    if drop_small and too_small:
+        return "too_small"
+    if drop_blurry and blurry:
+        return "blurry"
+    return ""
+
+
 def blur_variance(path):
     img = cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
     if img is None:
@@ -90,21 +102,25 @@ def main():
     clean = Path(cfg["paths"]["clean"])
     clean.mkdir(parents=True, exist_ok=True)
 
-    from rapidocr_onnxruntime import RapidOCR
-    ocr = RapidOCR()
+    drop_small = ing.get("drop_small", False)
+    drop_blurry = ing.get("drop_blurry", False)
+    run_ocr = ing.get("run_ocr_flag", False)
+
+    ocr = None
+    if run_ocr:
+        from rapidocr_onnxruntime import RapidOCR
+        ocr = RapidOCR()
 
     all_imgs = list(common.iter_images(raw))
-    LOG.info("Stage 1: %d raw images", len(all_imgs))
+    LOG.info("Stage 1: %d raw images (drop_small=%s drop_blurry=%s run_ocr=%s)",
+             len(all_imgs), drop_small, drop_blurry, run_ocr)
 
     survivors, rows = [], []
     for p in all_imgs:
-        reason = ""
-        if is_corrupt(p):
-            reason = "corrupt"
-        elif is_too_small(p, ing["min_size"]):
-            reason = "too_small"
-        elif blur_variance(p) < ing["blur_var_threshold"]:
-            reason = "blurry"
+        corrupt = is_corrupt(p)
+        too_small = (not corrupt) and is_too_small(p, ing["min_size"])
+        blurry = (not corrupt) and (blur_variance(p) < ing["blur_var_threshold"])
+        reason = drop_reason(corrupt, too_small, blurry, drop_small, drop_blurry)
         if reason:
             rows.append({"path": str(p), "dropped": "True", "drop_reason": reason})
         else:
@@ -116,8 +132,8 @@ def main():
 
     for p in keep:
         w, h = image_size(p)
-        ratio = ocr_text_area_ratio(p, ocr)
-        flagged = ratio > ing["ocr_text_area_ratio_flag"]
+        ratio = ocr_text_area_ratio(p, ocr) if run_ocr else 0.0
+        flagged = run_ocr and ratio > ing["ocr_text_area_ratio_flag"]
         dest = clean / p.name
         shutil.copy2(p, dest)
         rows.append({

@@ -40,3 +40,15 @@ def test_dedup_keeps_one_per_group_highest_resolution(make_image):
     keep, drop = stage.dedup([big, small], hamming_threshold=6)
     assert big in keep
     assert small in drop
+
+
+def test_drop_reason_respects_flags():
+    # corrupt always drops; small/blurry only drop when their flag is on
+    assert stage.drop_reason(corrupt=True, too_small=True, blurry=True,
+                             drop_small=False, drop_blurry=False) == "corrupt"
+    assert stage.drop_reason(corrupt=False, too_small=True, blurry=False,
+                             drop_small=False, drop_blurry=False) == ""
+    assert stage.drop_reason(corrupt=False, too_small=True, blurry=False,
+                             drop_small=True, drop_blurry=False) == "too_small"
+    assert stage.drop_reason(corrupt=False, too_small=False, blurry=True,
+                             drop_small=False, drop_blurry=True) == "blurry"

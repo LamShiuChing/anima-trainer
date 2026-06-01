@@ -25,11 +25,10 @@ quality:
   bucket_medium_min: 5.0         # score >= => medium ; else bad
 
 caption:                         # v2: tag-only captions (no JoyCaption NL, no trigger word)
-  nsfw_model: MichalMlodawski/nsfw-image-detection-large
+  nsfw_model: Falconsai/nsfw_image_detection   # public ViT, 2-class (normal/nsfw); MichalMlodawski went private (401)
   nsfw_label_map:                # substring of model label (upper) -> anima safety tag
-    SAFE: safe
-    QUESTIONABLE: sensitive
-    UNSAFE: explicit
+    NORMAL: safe
+    NSFW: explicit
   nsfw_default_tag: safe         # fallback if no label substring matches
   quality_tag_map:
     good: "masterpiece, best quality"

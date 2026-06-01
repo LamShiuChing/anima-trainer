@@ -12,6 +12,7 @@ transformers>=4.45,<5    # CLIP aesthetic + NSFW classifier + Qwen2-VL (ToriiGat
 accelerate>=0.34
 sentencepiece>=0.2
 qwen-vl-utils>=0.0.8     # ToriiGate (Qwen2-VL) image preprocessing
+dghs-imgutils>=0.4       # WD14 booru tagger (fast, default captioner)
 huggingface_hub>=0.25
 tqdm>=4.66
 pytest>=8.0

@@ -34,8 +34,11 @@ caption:                         # v2.1: <quality>, <safety>, <NL description> (
     good: "masterpiece, best quality"
     medium: "high quality"
     bad: "low quality"
-  # --- NL captioner: descriptions give the model real content to bind to (tag-only was too thin) ---
-  captioner: toriigate           # toriigate (2B, fast, uncensored) | joycaption (8B, slower, uncensored)
+  # --- Captioner: WD14 booru tags = Anima-native + ~single-forward-pass fast; VLMs = NL descriptions ---
+  captioner: wdtagger            # wdtagger (booru tags, fast) | toriigate (NL, 2B) | joycaption (NL, 8B)
+  # WD14 v3 tagger (booru content tags, uncensored). Needs `pip install dghs-imgutils`.
+  wd_model_name: SwinV2_v3       # fast v3 tagger
+  wd_general_threshold: 0.35     # keep tags scoring >= this
   # ToriiGate v0.4 (Qwen2-VL based, uncensored). 2B = ~4GB, fast. Needs `pip install qwen-vl-utils`.
   toriigate_model: Minthy/ToriiGate-v0.4-2B
   toriigate_prompt_mode: long    # long (detailed) | short (medium-short)

@@ -138,13 +138,33 @@ class ToriiGateCaptioner:
         return clean_nl(out)
 
 
+class WDTaggerCaptioner:
+    """WD14 v3 booru tagger (single forward pass, no token generation -> very fast). Uncensored.
+    Produces Anima-native comma-separated booru tags, e.g. 'long hair, nude, on all fours, couch'."""
+    def __init__(self, cfg, device="cuda"):
+        from imgutils.tagging import get_wd14_tags  # uses onnxruntime (GPU if onnxruntime-gpu installed, else CPU)
+        self._tag = get_wd14_tags
+        c = cfg["caption"]
+        self.model_name = c.get("wd_model_name", "SwinV2_v3")
+        self.threshold = c.get("wd_general_threshold", 0.35)
+
+    def caption(self, path):
+        _rating, general, _chars = self._tag(
+            path, model_name=self.model_name, general_threshold=self.threshold,
+            no_underline=True, drop_overlap=True,
+        )
+        return ", ".join(general.keys())  # tags ordered by confidence, spaces not underscores
+
+
 def build_captioner(cfg):
     which = cfg["caption"].get("captioner", "joycaption").lower()
+    if which in ("wdtagger", "wd", "wd14"):
+        return WDTaggerCaptioner(cfg)
     if which == "toriigate":
         return ToriiGateCaptioner(cfg)
     if which == "joycaption":
         return JoyCaptioner(cfg)
-    raise ValueError(f"Unknown caption.captioner: {which!r} (use 'toriigate' or 'joycaption')")
+    raise ValueError(f"Unknown caption.captioner: {which!r} (use 'wdtagger', 'toriigate', or 'joycaption')")
 
 
 def main():

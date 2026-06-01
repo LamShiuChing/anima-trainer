@@ -174,24 +174,33 @@ def main():
     kept = [r for r in rows if r.get("dropped") == "False"]
     LOG.info("Stage 3: captioning %d images (quality + safety + JoyCaption NL)", len(kept))
 
+    block_terms = {t.strip().lower() for t in cap_cfg.get("block_tags", [])}
     nsfw = NSFWTagger(cfg)
     captioner = build_captioner(cfg)
-    LOG.info("Stage 3: captioner=%s", cap_cfg.get("captioner", "joycaption"))
+    LOG.info("Stage 3: captioner=%s | block_tags=%s", cap_cfg.get("captioner", "joycaption"), sorted(block_terms))
     updates = {}
+    blocked = 0
     for idx, r in enumerate(tqdm(kept, desc="caption", unit="img", dynamic_ncols=True)):
         bucket = r.get("bucket")
         if not bucket:
             raise RuntimeError(f"No bucket for {r['path']} - run stage 2 (02_quality_score) first.")
+        nl = captioner.caption(r["path"])
+        # SAFETY: hard-drop images whose tags include an underage indicator (adults-only boundary).
+        tags = {t.strip().lower() for t in nl.split(",")}
+        hit = block_terms & tags
+        if hit:
+            updates[r["path"]] = {"dropped": "True", "drop_reason": "underage_flag:" + ",".join(sorted(hit))}
+            blocked += 1
+            continue
         qtag = quality_tag_for(bucket, cap_cfg["quality_tag_map"])
         stag = nsfw.tag(r["path"])
-        nl = captioner.caption(r["path"])
         caption = assemble_caption(qtag, stag, nl)
         updates[r["path"]] = {"safety_tag": stag, "quality_tag": qtag, "caption": caption}
         if idx < 3:  # show the first few so quality can be sanity-checked immediately
             tqdm.write(f"[sample {idx}] {caption}")
 
     common.augment_manifest(cfg["paths"]["manifest"], updates)
-    LOG.info("Stage 3 done.")
+    LOG.info("Stage 3 done. BLOCKED %d images (underage-indicator tags) -> excluded from training; REVIEW + delete real ones.", blocked)
 
 
 if __name__ == "__main__":

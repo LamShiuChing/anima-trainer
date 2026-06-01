@@ -39,6 +39,9 @@ caption:                         # v2.1: <quality>, <safety>, <NL description> (
   # WD14 v3 tagger (booru content tags, uncensored). Needs `pip install dghs-imgutils`.
   wd_model_name: SwinV2_v3       # fast v3 tagger
   wd_general_threshold: 0.35     # keep tags scoring >= this
+  # SAFETY (hard boundary, adults only): drop — NOT tag — any image whose WD tags include an underage
+  # indicator. Exact tag match. Flagged images are excluded from training; review + delete real ones.
+  block_tags: [loli, shota, toddlercon, child, baby, infant, toddler, aged_down]
   # ToriiGate v0.4 (Qwen2-VL based, uncensored). 2B = ~4GB, fast. Needs `pip install qwen-vl-utils`.
   toriigate_model: Minthy/ToriiGate-v0.4-2B
   toriigate_prompt_mode: long    # long (detailed) | short (medium-short)

@@ -28,7 +28,8 @@ wget -c -O "$MODELS/qwen_image_vae.safetensors"   "$HF/vae/qwen_image_vae.safete
 
 # 3b) Qwen3-0.6B-Base text encoder as a HF DIR. The Anima loader calls AutoTokenizer.from_pretrained(qwen_path),
 #     which needs tokenizer+config files — a single .safetensors fails. Official base repo = same weights.
-pip install -q "huggingface_hub[cli]"
-huggingface-cli download Qwen/Qwen3-0.6B-Base --local-dir "$MODELS/Qwen3-0.6B-Base"
+#     Use snapshot_download (stable API) — the huggingface-cli entrypoint varies by version.
+pip install -q huggingface_hub
+python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-0.6B-Base', local_dir='$MODELS/Qwen3-0.6B-Base')"
 
 echo "Setup done. Models in $MODELS ; diffusion-pipe in $DP_DIR"

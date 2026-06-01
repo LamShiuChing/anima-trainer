@@ -38,4 +38,4 @@ def test_sample_prompts_demonstrate_quality_and_safety_steering():
     assert "realistic photo" in text
     assert "masterpiece, best quality" in text
     assert "low quality" in text       # success criterion #4: quality axis
-    assert "--seed 42" in text          # fixed seed for comparable previews
+    assert "--d 42" in text             # fixed seed for comparable previews (--d is sd-scripts' seed flag)

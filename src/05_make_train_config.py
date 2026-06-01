@@ -8,7 +8,7 @@ LOG = common.setup_logging()
 
 def build_sample_prompts(trigger, seed):
     """Fixed-seed previews proving the trigger + quality/safety steering (success criteria #3,#4)."""
-    common_tail = f"--w 768 --h 768 --seed {seed} --s 24 --l 5.0"
+    common_tail = f"--w 768 --h 768 --d {seed} --s 24 --l 5.0"  # --d = seed in sd-scripts sample prompts
     return [
         f"masterpiece, best quality, safe, {trigger}, a woman sitting on a park bench at golden hour, 35mm {common_tail}",
         f"masterpiece, best quality, safe, {trigger}, a city street in the rain at night, neon reflections {common_tail}",

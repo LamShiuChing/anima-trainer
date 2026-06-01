@@ -24,7 +24,7 @@ quality:
   bucket_good_min: 6.0           # score >= => good
   bucket_medium_min: 5.0         # score >= => medium ; else bad
 
-caption:                         # v2: tag-only captions (no JoyCaption NL, no trigger word)
+caption:                         # v2.1: <quality>, <safety>, <NL description> (JoyCaption restored; still no trigger)
   nsfw_model: Falconsai/nsfw_image_detection   # public ViT, 2-class (normal/nsfw); MichalMlodawski went private (401)
   nsfw_label_map:                # substring of model label (upper) -> anima safety tag
     NORMAL: safe
@@ -34,6 +34,11 @@ caption:                         # v2: tag-only captions (no JoyCaption NL, no t
     good: "masterpiece, best quality"
     medium: "high quality"
     bad: "low quality"
+  # --- JoyCaption (NL description) — gives the model real content to bind to (tag-only was too thin) ---
+  joycaption_model: fancyfeast/llama-joycaption-beta-one-hf-llava
+  joycaption_prompt: "Write a detailed, factual description of this image: the people and their appearance, clothing (or lack of it), pose, expression, the setting, and lighting. Be concrete and direct. Do not comment on image quality, resolution, or aesthetics."
+  joycaption_max_new_tokens: 256
+  joycaption_load_4bit: false    # A100/bf16 default. Set true ONLY on <=16GB GPUs (then `pip install bitsandbytes`).
 
 dataset:
   buckets_to_keep: [good, medium, bad]  # v2: keep all; mixed quality becomes a tag, not a discard

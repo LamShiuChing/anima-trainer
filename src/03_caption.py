@@ -158,7 +158,7 @@ def main():
     captioner = build_captioner(cfg)
     LOG.info("Stage 3: captioner=%s", cap_cfg.get("captioner", "joycaption"))
     updates = {}
-    for r in tqdm(kept, desc="caption", unit="img", dynamic_ncols=True):
+    for idx, r in enumerate(tqdm(kept, desc="caption", unit="img", dynamic_ncols=True)):
         bucket = r.get("bucket")
         if not bucket:
             raise RuntimeError(f"No bucket for {r['path']} - run stage 2 (02_quality_score) first.")
@@ -167,6 +167,8 @@ def main():
         nl = captioner.caption(r["path"])
         caption = assemble_caption(qtag, stag, nl)
         updates[r["path"]] = {"safety_tag": stag, "quality_tag": qtag, "caption": caption}
+        if idx < 3:  # show the first few so quality can be sanity-checked immediately
+            tqdm.write(f"[sample {idx}] {caption}")
 
     common.augment_manifest(cfg["paths"]["manifest"], updates)
     LOG.info("Stage 3 done.")

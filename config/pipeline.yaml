@@ -9,10 +9,13 @@ paths:
   trainer_dir: trainer
 
 ingest:
-  min_size: 512                  # drop if min(width,height) < this
-  blur_var_threshold: 100.0      # drop if cv2 Laplacian variance < this (blurry)
-  phash_hamming_threshold: 6     # <= this Hamming distance => near-duplicate
-  ocr_text_area_ratio_flag: 0.10 # > this fraction of area covered by text => flag meme/screenshot
+  min_size: 512                  # kept for reference; not enforced when drop_small=false
+  blur_var_threshold: 100.0      # kept for reference; not enforced when drop_blurry=false
+  phash_hamming_threshold: 6     # <= this Hamming distance => near-duplicate (ALWAYS enforced)
+  ocr_text_area_ratio_flag: 0.10 # only used when run_ocr_flag=true
+  drop_small: false              # v2: tag-don't-filter; diffusion-pipe AR-buckets handle small images
+  drop_blurry: false             # v2: keep blurry, they just won't score 'good'
+  run_ocr_flag: false            # v2: skip OCR entirely (we keep everything anyway)
 
 quality:
   clip_model: openai/clip-vit-large-patch14
@@ -21,36 +24,42 @@ quality:
   bucket_good_min: 6.0           # score >= => good
   bucket_medium_min: 5.0         # score >= => medium ; else bad
 
-caption:
-  joycaption_model: fancyfeast/llama-joycaption-beta-one-hf-llava
-  joycaption_prompt: "Write a descriptive caption for this image in a formal tone. Do not comment on image quality, resolution, or aesthetic rating."
-  max_new_tokens: 300
+caption:                         # v2: tag-only captions (no JoyCaption NL, no trigger word)
   nsfw_model: MichalMlodawski/nsfw-image-detection-large
   nsfw_label_map:                # substring of model label (upper) -> anima safety tag
     SAFE: safe
     QUESTIONABLE: sensitive
     UNSAFE: explicit
   nsfw_default_tag: safe         # fallback if no label substring matches
-  trigger: "realistic photo"
   quality_tag_map:
     good: "masterpiece, best quality"
     medium: "high quality"
     bad: "low quality"
 
 dataset:
-  buckets_to_keep: [good, medium]  # phase-1 curation; "bad" dropped
-  num_repeats: 5
-  resolution: 768
-  caption_dropout_rate: 0.1
+  buckets_to_keep: [good, medium, bad]  # v2: keep all; mixed quality becomes a tag, not a discard
+  # diffusion-pipe dataset.toml params:
+  resolutions: [512]             # Anima native res; run 1. diffusion-pipe resizes to this AREA (upscales smaller imgs), so 512 minimizes upscaling on social data
+  min_ar: 0.5                    # widest portrait bucket (1:2)
+  max_ar: 2.0                    # widest landscape bucket (2:1)
+  num_ar_buckets: 7
+  num_repeats: 1                 # lots of data; no duplication needed
 
-train:
-  project_name: anima_realism_v1
-  network_dim: 32
-  network_alpha: 32
-  learning_rate: 1.0e-4
-  max_train_epochs: 10
-  resolution: 768
-  seed: 42
+finetune:                        # diffusion-pipe anima.toml (FULL finetune, not LoRA)
+  base_dir: /workspace/anima     # Vast working dir (RUNBOOK sets this up)
+  project_name: anima_realism_ft_v1
+  epochs: 10
+  lr: 8.0e-6                     # authors' full-finetune rec (8e-6 or lower); low to avoid catastrophic forgetting
+  optimizer: AdamW8bitKahan      # 8-bit optimizer for lower VRAM
+  warmup_steps: 100
+  save_every_n_epochs: 1
+  checkpoint_every_n_minutes: 30
+  llm_adapter_lr: 0              # freeze Qwen3 LLM adapter (domain shift; preserve text understanding)
+  tag_dropout_percent: 0.10
+  caption_dropout_percent: 0.05  # CFG: % steps trained with empty caption
+  dit_file: anima-base-v1.0.safetensors
+  vae_file: qwen_image_vae.safetensors
+  qwen_file: qwen_3_06b_base.safetensors
 
 models:                          # Anima training assets pulled by download_models.ps1
   hf_repo: circlestone-labs/Anima

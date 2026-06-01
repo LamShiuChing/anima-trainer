@@ -9,21 +9,32 @@ Train a **realism domain-shift LoRA** for the **Anima** diffusion model (anime b
 realistic photographs. Community realism finetunes of Anima already exist on Civitai, so it works —
 it's a domain shift fought against the anime prior.
 
-- **Phase 1 (current):** prove pipeline + data + captions with a LoRA, on **local RTX 4080 (16GB), Windows 11**.
-- **Phase 2 (future, separate spec):** full finetune on all ~3000 images, on RunPod.
+- **~~Phase 1: LoRA on local 4080~~ — SUPERSEDED.** See Status below: pivoted to full finetune on Vast.ai.
+- **Current:** full finetune on all uploaded photos via **diffusion-pipe** on a **rented ~48GB cloud GPU (Vast.ai)**.
 
-## Status (2026-05-31)
+## Status (2026-06-01) — PIVOTED to v2: full finetune on Vast
 
-**Pipeline BUILT and merged to `master`** (subagent-driven exec, 13 task commits, **19 unit tests passing**).
-All 6 stages + `common.py` + `download_models.ps1` + `06_train.ps1` + README in place. Build-time open items
-(§12) resolved: NSFW = `MichalMlodawski/nsfw-image-detection-large` (3-class), captioner = JoyCaption **4-bit nf4**
-(bf16's ~17GB won't fit 16GB), aesthetic = `improved-aesthetic-predictor` (CLIP-L/14 + MLP), stage 6 auto-clones+setups trainer.
+**Major pivot (user decision):** LoRA→**full finetune**, local 4080→**rented cloud GPU (Vast.ai)**,
+JoyCaption NL→**tag-only captions**, drop-filter→**tag-don't-filter**, trigger word→**none**.
+Reason: anime→photoreal is a domain shift LoRA can't fully relocate; full finetune needs ~33GB VRAM
+(won't fit 16GB regardless of speed). **v2 spec:** `docs/superpowers/specs/2026-06-01-anima-realism-finetune-v2-design.md`;
+**plan:** `docs/superpowers/plans/2026-06-01-anima-realism-finetune-v2.md`; **runbook:** `RUNBOOK.md`.
 
-**Built offline with CPU torch + pure-logic tests only.** NOT yet run live. **Next step: live run on the 4080** —
-`python -m venv .venv` then `pip install torch torchvision --index-url .../cu128` + `pip install -r requirements.txt`,
-then stages 1→5, `download_models.ps1`, `06_train.ps1`. Two checks still deferred to first live run (flagged in
-plan): NSFW model `id2label` exact strings (→ adjust `caption.nsfw_label_map` if needed) and the trainer venv
-activate path inside `06_train.ps1` (setup_env.bat may name the venv differently).
+**v2 BUILT + merged to `master`** (plan-driven, 10 tasks, **20 unit tests passing**). Pipeline slimmed
+4-stage: S1 ingest (corrupt-drop + phash dedup only; small/blur/OCR gated off via `ingest.drop_*` flags),
+S2 CLIP aesthetic score (tags all, drops none), S3 NSFW safety tag + quality words → caption `"<quality>, <safety>"`
+(no JoyCaption, no trigger), S4+S5 emit **diffusion-pipe** `dataset.toml` + `anima.toml` (NOT kohya).
+Trainer is now **diffusion-pipe** (`bluvoll/diffusion-pipe`, full-finetune support via tdrussell PR #505),
+launched `deepspeed --num_gpus=1 train.py --deepspeed --config anima.toml`. Old `06_train.ps1` +
+`download_models.ps1` deleted (superseded by `scripts/vast_setup.sh` + `scripts/run_prep.sh` + RUNBOOK).
+Anima loader confirmed: `qwen_path` accepts the single `qwen_3_06b_base.safetensors`; `vae_path` via WanVAE
+class (Qwen-Image VAE is Wan-derived); `llm_adapter_lr=0` freezes the Qwen3 adapter.
+
+**Still NOT run live.** Configs emit + parse correctly (verified). First live run = follow `RUNBOOK.md` on Vast.
+Deferred to first live run: NSFW `id2label` exact strings (→ adjust `caption.nsfw_label_map`); diffusion-pipe
+in-train image eval is OFF (preview epoch checkpoints in ComfyUI); confirm bluvoll fork branch still has Anima.
+**Resolution = 512 for run 1** (diffusion-pipe resizes to target AREA / upscales smaller imgs — no no-upscale flag —
+so 512≈Anima native minimizes upscaling on mixed social data; bump to 768 once a 512 run validates).
 
 ## Dataset
 

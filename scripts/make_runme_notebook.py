@@ -119,7 +119,20 @@ def show_images(paths, n=6, size=256):
     if shown == 0:
         print("(no images to show yet)")
 
-print("Helpers loaded. ✅")
+def assert_venv():
+    "Stop with a clear message if the notebook is running on the wrong Python (not the .venv)."
+    exe = sys.executable.replace("/", "\\").lower()
+    if ".venv" not in exe:
+        raise SystemExit(
+            "WRONG KERNEL.\n"
+            f"  This notebook is running: {sys.executable}\n"
+            "  It must run in the project's .venv.\n"
+            "  FIX: top menu -> Kernel -> Change kernel -> 'Python (anima .venv)',\n"
+            "       then Kernel -> Restart Kernel and Run All Cells."
+        )
+
+assert_venv()
+print("Helpers loaded, running in the .venv. ✅")
 """)
 
 # ---------------------------------------------------------------- preflight
@@ -129,6 +142,7 @@ Confirms your GPU is visible, your photos are in place, and the right libraries 
 """)
 
 code(r"""
+assert_venv()   # stops with a clear message if you're on the wrong kernel (before torch loads)
 import torch, transformers
 issues = []
 

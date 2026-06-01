@@ -81,7 +81,11 @@ cp outputs/anima_realism_ft_v1_*.toml $ANIMA_BASE/outputs/
 ## 6. Launch the finetune
 
 ```bash
-deactivate 2>/dev/null || true        # leave prepvenv; use the instance's training torch
+# Activate the instance's base Python env (has torch + deepspeed). A fresh tmux/SSH shell does NOT
+# auto-activate it, so `deepspeed: command not found` means this step was skipped. Path is Vast-image
+# specific — if /venv/main is absent, run `which python` in a normal shell to find the active env.
+source /venv/main/bin/activate
+which deepspeed || pip install deepspeed
 cd $ANIMA_BASE/diffusion-pipe
 deepspeed --num_gpus=1 train.py --deepspeed \
   --config $ANIMA_BASE/outputs/anima_realism_ft_v1_train_config.toml

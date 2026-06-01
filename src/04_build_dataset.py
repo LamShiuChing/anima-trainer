@@ -48,6 +48,10 @@ def main():
     rows = common.read_manifest(cfg["paths"]["manifest"])
     kept = curate(rows, ds["buckets_to_keep"])
     dest = Path(cfg["paths"]["dataset"])
+    # Safety: dest is wiped below; never let a misconfig point it at the raw/clean inputs.
+    for protected in ("raw", "clean"):
+        if dest.resolve() == Path(cfg["paths"][protected]).resolve():
+            raise RuntimeError(f"paths.dataset must not equal paths.{protected} (would delete inputs).")
     if dest.exists():
         shutil.rmtree(dest)  # rebuild cleanly (idempotent)
     LOG.info("Stage 4: curated %d images -> %s", len(kept), dest)

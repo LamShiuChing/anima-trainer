@@ -3,7 +3,7 @@
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $trainerDir = Join-Path $root "trainer"
-$project = "anima_realism_v1"
+$project = "anima_realism_v1"   # MUST match train.project_name in config/pipeline.yaml
 $outputs = Join-Path $root "outputs"
 $trainToml = Join-Path $outputs "${project}_training_config.toml"
 $dataToml  = Join-Path $outputs "${project}_dataset_config.toml"

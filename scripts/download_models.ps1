@@ -1,5 +1,5 @@
 # Downloads the 3 Anima training assets into models/ (idempotent: skips existing files).
-# Reads repo + relative paths from config/pipeline.yaml's `models:` block (kept inline here for a no-dep script).
+# Repo + file paths are duplicated inline (no-dep script). KEEP IN SYNC with config/pipeline.yaml's models: block.
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $modelsDir = Join-Path $root "models"

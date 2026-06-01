@@ -97,7 +97,10 @@ def main():
     nsfw = NSFWTagger(cfg)
     updates = {}
     for r in kept:
-        qtag = quality_tag_for(r["bucket"], cap_cfg["quality_tag_map"])
+        bucket = r.get("bucket")
+        if not bucket:
+            raise RuntimeError(f"No bucket for {r['path']} - run stage 2 (02_quality_score) first.")
+        qtag = quality_tag_for(bucket, cap_cfg["quality_tag_map"])
         stag = nsfw.tag(r["path"])
         nl = joy.caption(r["path"])
         caption = assemble_caption(qtag, stag, cap_cfg["trigger"], nl)

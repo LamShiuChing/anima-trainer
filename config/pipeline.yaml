@@ -47,12 +47,12 @@ dataset:
 finetune:                        # diffusion-pipe anima.toml (FULL finetune, not LoRA)
   base_dir: /workspace/anima     # Vast working dir (RUNBOOK sets this up)
   project_name: anima_realism_ft_v1
-  epochs: 10
+  epochs: 4                      # run-1 proof; domain shift shows fast. preview each epoch, extend later if wanted
   lr: 8.0e-6                     # authors' full-finetune rec (8e-6 or lower); low to avoid catastrophic forgetting
-  optimizer: AdamW8bitKahan      # 8-bit optimizer for lower VRAM
+  optimizer: adamw_optimi        # proven default; A100-80GB has VRAM to spare (no need for 8-bit)
   warmup_steps: 100
-  save_every_n_epochs: 1
-  checkpoint_every_n_minutes: 30
+  save_every_n_epochs: 1         # one inference-ready model export per epoch (~4-5GB each)
+  checkpoint_every_n_minutes: 999999  # effectively OFF — avoid ~20GB optimizer-state dumps filling disk
   llm_adapter_lr: 0              # freeze Qwen3 LLM adapter (domain shift; preserve text understanding)
   tag_dropout_percent: 0.10
   caption_dropout_percent: 0.05  # CFG: % steps trained with empty caption

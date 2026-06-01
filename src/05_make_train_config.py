@@ -61,7 +61,7 @@ type = '{optimizer}'
 lr = {lr}
 betas = [0.9, 0.99]
 weight_decay = 0.01
-stabilize = false
+eps = 1e-8
 
 [monitoring]
 enable_wandb = false

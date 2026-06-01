@@ -26,10 +26,12 @@ mkdir -p $ANIMA_BASE && cd $ANIMA_BASE
 git clone <YOUR_REPO_URL> repo        # this project (the pipeline + scripts)
 cd repo
 
-# your photos:
-mkdir -p data/raw
-cd data/raw
-wget -O dataset_raw.zip "<YOUR_DIRECT_ZIP_LINK>"
+# your photos from Google Drive — use gdown (plain wget fails on GDrive's >100MB virus-scan page).
+# GDrive file must be shared "Anyone with the link". Grab the FILE_ID from the share URL:
+#   https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+mkdir -p data/raw && cd data/raw
+pip install gdown
+gdown --fuzzy "https://drive.google.com/file/d/<FILE_ID>/view?usp=sharing" -O dataset_raw.zip
 unzip -q dataset_raw.zip && rm dataset_raw.zip
 # flatten if the zip made a subfolder:
 find . -mindepth 2 -type f -exec mv -t . {} + 2>/dev/null || true
@@ -46,10 +48,11 @@ bash scripts/vast_setup.sh        # clones fork, pip installs, wgets the 3 model
 ## 4. Install the prep pipeline deps (separate from training)
 
 ```bash
-python -m venv $ANIMA_BASE/prepvenv
+# --system-site-packages reuses the instance image's CUDA torch (no 2.5 GB reinstall / CUDA mismatch).
+python -m venv --system-site-packages $ANIMA_BASE/prepvenv
 source $ANIMA_BASE/prepvenv/bin/activate
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-pip install -r requirements.txt
+pip install -r requirements.txt   # torch NOT listed here — comes from the instance image
+python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
 ```
 
 ## 5. Run prep (dedup → score → tag → build dataset + configs)

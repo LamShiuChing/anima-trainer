@@ -1,0 +1,2 @@
+# Shell scripts run on the Vast.ai Linux instance — force LF so the shebang isn't broken by CRLF.
+*.sh text eol=lf

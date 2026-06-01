@@ -51,7 +51,7 @@ dataset:
 
 finetune:                        # diffusion-pipe anima.toml (FULL finetune, not LoRA)
   base_dir: /workspace/anima     # Vast working dir (RUNBOOK sets this up)
-  project_name: anima_realism_ft_v1
+  project_name: anima_realism_ft_v2    # v2 = JoyCaption descriptive captions (v1 was tag-only/blurry). Separate output folder.
   epochs: 4                      # run-1 proof; domain shift shows fast. preview each epoch, extend later if wanted
   lr: 8.0e-6                     # authors' full-finetune rec (8e-6 or lower); low to avoid catastrophic forgetting
   optimizer: adamw_optimi        # proven default; A100-80GB has VRAM to spare (no need for 8-bit)

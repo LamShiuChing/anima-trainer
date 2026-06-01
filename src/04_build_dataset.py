@@ -1,10 +1,15 @@
-"""Stage 4: curate good+medium, copy to flat data/dataset/, write img.txt sidecars, emit dataset TOML."""
+"""Stage 4: curate kept buckets, copy to flat data/dataset/, write img.txt sidecars, emit dataset TOML."""
 import shutil
 from pathlib import Path
+
+from PIL import Image
 
 import common
 
 LOG = common.setup_logging()
+
+# diffusion-pipe treats webp/gif/bmp as video (or rejects them) -> convert those to jpg on copy.
+PASSTHROUGH_EXTS = {".jpg", ".jpeg", ".png"}
 
 
 def curate(rows, buckets_to_keep):
@@ -15,7 +20,11 @@ def write_pair(img_path, caption, dest_dir):
     img_path = Path(img_path)
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(img_path, dest_dir / img_path.name)
+    if img_path.suffix.lower() in PASSTHROUGH_EXTS:
+        shutil.copy2(img_path, dest_dir / img_path.name)
+    else:
+        # convert webp/gif/bmp -> jpg (diffusion-pipe can't ingest them); keep the stem so the .txt matches
+        Image.open(img_path).convert("RGB").save(dest_dir / (img_path.stem + ".jpg"), quality=95)
     (dest_dir / (img_path.stem + ".txt")).write_text(caption, encoding="utf-8")
 
 

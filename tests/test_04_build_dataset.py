@@ -44,3 +44,13 @@ def test_sidecar_written(tmp_path, make_image):
     stage.write_pair(img, "masterpiece, best quality, safe", dest_dir)
     assert (dest_dir / "x.jpg").exists()
     assert (dest_dir / "x.txt").read_text(encoding="utf-8") == "masterpiece, best quality, safe"
+
+
+def test_webp_converted_to_jpg(tmp_path, make_image):
+    img = make_image("y.webp")            # diffusion-pipe rejects webp -> stage 4 must convert
+    dest_dir = tmp_path / "dataset"
+    dest_dir.mkdir()
+    stage.write_pair(img, "high quality, safe", dest_dir)
+    assert (dest_dir / "y.jpg").exists()
+    assert not (dest_dir / "y.webp").exists()
+    assert (dest_dir / "y.txt").read_text(encoding="utf-8") == "high quality, safe"

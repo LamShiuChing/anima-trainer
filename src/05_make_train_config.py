@@ -13,7 +13,7 @@ LOG = common.setup_logging()
 def write_anima_toml(out_path, base_dir, project_name, dit_file, vae_file, qwen_file,
                      epochs, lr, optimizer, warmup_steps, save_every_n_epochs,
                      checkpoint_every_n_minutes, llm_adapter_lr,
-                     tag_dropout_percent, caption_dropout_percent):
+                     tag_dropout_percent, caption_dropout_percent, steps_per_print=100):
     base = base_dir.rstrip("/")
     out_dir = f"{base}/outputs/{project_name}"
     dataset_toml = f"{base}/outputs/{project_name}_dataset_config.toml"
@@ -27,6 +27,7 @@ micro_batch_size_per_gpu = 1
 pipeline_stages = 1
 gradient_accumulation_steps = 1
 gradient_clipping = 1.0
+steps_per_print = {steps_per_print}
 warmup_steps = {warmup_steps}
 activation_checkpointing = true
 
@@ -85,6 +86,7 @@ def main():
         llm_adapter_lr=f["llm_adapter_lr"],
         tag_dropout_percent=f["tag_dropout_percent"],
         caption_dropout_percent=f["caption_dropout_percent"],
+        steps_per_print=f.get("steps_per_print", 100),
     )
     LOG.info("Stage 5 done. anima.toml -> %s", toml_path)
 

@@ -58,6 +58,7 @@ finetune:                        # diffusion-pipe anima.toml (FULL finetune, not
   warmup_steps: 100
   save_every_n_epochs: 1         # one inference-ready model export per epoch (~4-5GB each)
   checkpoint_every_n_minutes: 999999  # effectively OFF — avoid ~20GB optimizer-state dumps filling disk
+  steps_per_print: 100           # deepspeed log cadence; 100 = ~1 clean status line / ~45s (default 1 = spam)
   llm_adapter_lr: 0              # freeze Qwen3 LLM adapter (domain shift; preserve text understanding)
   tag_dropout_percent: 0.10
   caption_dropout_percent: 0.05  # CFG: % steps trained with empty caption

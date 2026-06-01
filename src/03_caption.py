@@ -1,6 +1,8 @@
-"""Stage 3: JoyCaption NL (4-bit) + NSFW safety tag + quality tag -> assembled caption. Augments manifest."""
-import re
+"""Stage 3: NSFW safety tag + quality tag -> tag-only caption "<quality>, <safety>". Augments manifest.
 
+v2: tag-only (no JoyCaption NL, no trigger word). Domain-shift finetune bakes realism in broadly;
+minimal captions are intentional. Quality words steer at inference; safety tag separates SFW/NSFW.
+"""
 import torch
 from PIL import Image
 
@@ -17,54 +19,17 @@ def quality_tag_for(bucket, quality_tag_map):
 
 def map_safety(model_label, label_map, default_tag):
     up = model_label.upper()
-    for key in sorted(label_map, key=len, reverse=True):
+    for key in sorted(label_map, key=len, reverse=True):  # longest-first: "UNSAFE" before "SAFE"
         if key.upper() in up:
             return label_map[key]
     return default_tag
 
 
-def clean_nl(text):
-    text = re.sub(r"\s+", " ", text).strip()
-    return text.rstrip(".").strip()
+def assemble_caption(quality_tag, safety_tag):
+    return f"{quality_tag}, {safety_tag}"
 
 
-def assemble_caption(quality_tag, safety_tag, trigger, nl):
-    return f"{quality_tag}, {safety_tag}, {trigger}, {nl}"
-
-
-# ---- model wrappers (smoke-tested) ----
-
-class JoyCaptioner:
-    def __init__(self, cfg, device="cuda"):
-        from transformers import AutoProcessor, LlavaForConditionalGeneration, BitsAndBytesConfig
-        name = cfg["caption"]["joycaption_model"]
-        self.prompt = cfg["caption"]["joycaption_prompt"]
-        self.max_new_tokens = cfg["caption"]["max_new_tokens"]
-        self.device = device
-        bnb = BitsAndBytesConfig(
-            load_in_4bit=True, bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True,
-        )
-        self.processor = AutoProcessor.from_pretrained(name)
-        self.model = LlavaForConditionalGeneration.from_pretrained(
-            name, quantization_config=bnb, torch_dtype=torch.bfloat16, device_map=device,
-        ).eval()
-
-    @torch.no_grad()
-    def caption(self, path):
-        image = Image.open(path).convert("RGB")
-        convo = [
-            {"role": "system", "content": "You are a helpful image captioner."},
-            {"role": "user", "content": self.prompt},
-        ]
-        convo_string = self.processor.apply_chat_template(convo, tokenize=False, add_generation_prompt=True)
-        inputs = self.processor(text=[convo_string], images=[image], return_tensors="pt").to(self.device)
-        inputs["pixel_values"] = inputs["pixel_values"].to(torch.bfloat16)
-        ids = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens, do_sample=False)[0]
-        ids = ids[inputs["input_ids"].shape[1]:]
-        text = self.processor.tokenizer.decode(ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-        return clean_nl(text)
-
+# ---- model wrapper (smoke-tested) ----
 
 class NSFWTagger:
     def __init__(self, cfg, device="cuda"):
@@ -91,9 +56,8 @@ def main():
     cap_cfg = cfg["caption"]
     rows = common.read_manifest(cfg["paths"]["manifest"])
     kept = [r for r in rows if r.get("dropped") == "False"]
-    LOG.info("Stage 3: captioning %d images", len(kept))
+    LOG.info("Stage 3: tagging %d images (tag-only captions)", len(kept))
 
-    joy = JoyCaptioner(cfg)
     nsfw = NSFWTagger(cfg)
     updates = {}
     for r in kept:
@@ -102,8 +66,7 @@ def main():
             raise RuntimeError(f"No bucket for {r['path']} - run stage 2 (02_quality_score) first.")
         qtag = quality_tag_for(bucket, cap_cfg["quality_tag_map"])
         stag = nsfw.tag(r["path"])
-        nl = joy.caption(r["path"])
-        caption = assemble_caption(qtag, stag, cap_cfg["trigger"], nl)
+        caption = assemble_caption(qtag, stag)
         updates[r["path"]] = {"safety_tag": stag, "quality_tag": qtag, "caption": caption}
 
     common.augment_manifest(cfg["paths"]["manifest"], updates)

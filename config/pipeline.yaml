@@ -34,7 +34,13 @@ caption:                         # v2.1: <quality>, <safety>, <NL description> (
     good: "masterpiece, best quality"
     medium: "high quality"
     bad: "low quality"
-  # --- JoyCaption (NL description) — gives the model real content to bind to (tag-only was too thin) ---
+  # --- NL captioner: descriptions give the model real content to bind to (tag-only was too thin) ---
+  captioner: toriigate           # toriigate (2B, fast, uncensored) | joycaption (8B, slower, uncensored)
+  # ToriiGate v0.4 (Qwen2-VL based, uncensored). 2B = ~4GB, fast. Needs `pip install qwen-vl-utils`.
+  toriigate_model: Minthy/ToriiGate-v0.4-2B
+  toriigate_prompt_mode: long    # long (detailed) | short (medium-short)
+  toriigate_max_new_tokens: 200
+  # JoyCaption (fallback captioner, 8B)
   joycaption_model: fancyfeast/llama-joycaption-beta-one-hf-llava
   joycaption_prompt: "Write a detailed, factual description of this image: the people and their appearance, clothing (or lack of it), pose, expression, the setting, and lighting. Be concrete and direct. Do not comment on image quality, resolution, or aesthetics."
   joycaption_max_new_tokens: 128   # ~half the gen time of 256; plenty for a training caption

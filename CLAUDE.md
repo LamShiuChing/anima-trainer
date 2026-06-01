@@ -14,11 +14,16 @@ it's a domain shift fought against the anime prior.
 
 ## Status (2026-05-31)
 
-Implementation plan written → `docs/superpowers/plans/2026-05-31-anima-realism-lora-pipeline.md`
-(9 TDD tasks, complete code). Build-time open items (§12) resolved: NSFW = `MichalMlodawski/nsfw-image-detection-large`
-(3-class), captioner = JoyCaption **4-bit nf4** (bf16's ~17GB won't fit 16GB), aesthetic = `improved-aesthetic-predictor`
-(CLIP-L/14 + MLP), stage 6 auto-clones+setups trainer. **Next step: execute the plan** (subagent-driven or inline).
-No pipeline code written yet.
+**Pipeline BUILT and merged to `master`** (subagent-driven exec, 13 task commits, **19 unit tests passing**).
+All 6 stages + `common.py` + `download_models.ps1` + `06_train.ps1` + README in place. Build-time open items
+(§12) resolved: NSFW = `MichalMlodawski/nsfw-image-detection-large` (3-class), captioner = JoyCaption **4-bit nf4**
+(bf16's ~17GB won't fit 16GB), aesthetic = `improved-aesthetic-predictor` (CLIP-L/14 + MLP), stage 6 auto-clones+setups trainer.
+
+**Built offline with CPU torch + pure-logic tests only.** NOT yet run live. **Next step: live run on the 4080** —
+`python -m venv .venv` then `pip install torch torchvision --index-url .../cu128` + `pip install -r requirements.txt`,
+then stages 1→5, `download_models.ps1`, `06_train.ps1`. Two checks still deferred to first live run (flagged in
+plan): NSFW model `id2label` exact strings (→ adjust `caption.nsfw_label_map` if needed) and the trainer venv
+activate path inside `06_train.ps1` (setup_env.bat may name the venv differently).
 
 ## Dataset
 

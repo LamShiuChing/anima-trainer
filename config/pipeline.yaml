@@ -1,0 +1,62 @@
+# Single source of truth for all paths + thresholds. All paths are project-root-relative.
+paths:
+  raw: data/raw
+  clean: data/clean
+  dataset: data/dataset
+  outputs: outputs
+  manifest: data/manifest.csv
+  models_dir: models
+  trainer_dir: trainer
+
+ingest:
+  min_size: 512                  # drop if min(width,height) < this
+  blur_var_threshold: 100.0      # drop if cv2 Laplacian variance < this (blurry)
+  phash_hamming_threshold: 6     # <= this Hamming distance => near-duplicate
+  ocr_text_area_ratio_flag: 0.10 # > this fraction of area covered by text => flag meme/screenshot
+
+quality:
+  clip_model: openai/clip-vit-large-patch14
+  aesthetic_weights_url: https://github.com/christophschuhmann/improved-aesthetic-predictor/raw/main/sac%2Blogos%2Bava1-l14-linearMSE.pth
+  aesthetic_weights_file: models/aesthetic/sac+logos+ava1-l14-linearMSE.pth
+  bucket_good_min: 6.0           # score >= => good
+  bucket_medium_min: 5.0         # score >= => medium ; else bad
+
+caption:
+  joycaption_model: fancyfeast/llama-joycaption-beta-one-hf-llava
+  joycaption_prompt: "Write a descriptive caption for this image in a formal tone. Do not comment on image quality, resolution, or aesthetic rating."
+  max_new_tokens: 300
+  nsfw_model: MichalMlodawski/nsfw-image-detection-large
+  nsfw_label_map:                # substring of model label (upper) -> anima safety tag
+    SAFE: safe
+    QUESTIONABLE: sensitive
+    UNSAFE: explicit
+  nsfw_default_tag: safe         # fallback if no label substring matches
+  trigger: "realistic photo"
+  quality_tag_map:
+    good: "masterpiece, best quality"
+    medium: "high quality"
+    bad: "low quality"
+
+dataset:
+  buckets_to_keep: [good, medium]  # phase-1 curation; "bad" dropped
+  num_repeats: 5
+  resolution: 768
+  caption_dropout_rate: 0.1
+
+train:
+  project_name: anima_realism_v1
+  network_dim: 32
+  network_alpha: 32
+  learning_rate: 1.0e-4
+  max_train_epochs: 10
+  resolution: 768
+  seed: 42
+
+models:                          # Anima training assets pulled by download_models.ps1
+  hf_repo: circlestone-labs/Anima
+  dit: split_files/diffusion_models/anima-base-v1.0.safetensors
+  te:  split_files/text_encoders/qwen_3_06b_base.safetensors
+  vae: split_files/vae/qwen_image_vae.safetensors
+
+trainer:
+  repo: https://github.com/gazingstars123/Anima-Standalone-Trainer

@@ -1,9 +1,3 @@
-import csv
-from pathlib import Path
-
-import pytest
-
-from conftest import load_stage  # noqa: F401  (ensures src on path)
 import common
 
 
@@ -13,6 +7,10 @@ def test_load_config_reads_yaml(tmp_path):
     cfg = common.load_config(cfg_file)
     assert cfg["ingest"]["min_size"] == 512
     assert cfg["paths"]["raw"] == "data/raw"
+
+
+def test_read_manifest_missing_file_returns_empty(tmp_path):
+    assert common.read_manifest(tmp_path / "does_not_exist.csv") == []
 
 
 def test_manifest_roundtrip_and_augment(tmp_path):

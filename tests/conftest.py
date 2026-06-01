@@ -14,7 +14,7 @@ sys.path.insert(0, str(SRC))  # so stages can `import common` and tests can `imp
 def load_stage(filename):
     """Import a numbered stage module (e.g. '01_ingest_clean.py') that cannot be imported normally."""
     path = SRC / filename
-    name = filename[:-3]
+    name = Path(filename).stem
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

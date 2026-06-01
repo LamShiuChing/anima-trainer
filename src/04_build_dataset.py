@@ -19,25 +19,23 @@ def write_pair(img_path, caption, dest_dir):
     (dest_dir / (img_path.stem + ".txt")).write_text(caption, encoding="utf-8")
 
 
-def write_dataset_toml(out_path, image_dir, resolution, num_repeats, caption_dropout_rate):
-    # image_dir uses forward slashes (sd-scripts accepts them on Windows; avoids TOML backslash-escaping).
+def write_dataset_toml(out_path, image_dir, resolutions, min_ar, max_ar, num_ar_buckets, num_repeats):
+    """diffusion-pipe dataset config. frame_buckets=[1] => image-only.
+    diffusion-pipe resizes each image to the target AREA (upscaling smaller ones);
+    no per-image no-upscale flag exists, hence the low default resolution in pipeline.yaml."""
     image_dir = str(image_dir).replace("\\", "/")
-    toml = f"""[general]
-resolution = {resolution}
-enable_bucket = true
-bucket_no_upscale = false
-bucket_reso_steps = 64
-min_bucket_reso = 256
-max_bucket_reso = 4096
+    res_list = ", ".join(str(r) for r in resolutions)
+    toml = f"""# diffusion-pipe dataset config (Anima full finetune, images only)
+resolutions = [{res_list}]
+enable_ar_bucket = true
+min_ar = {min_ar}
+max_ar = {max_ar}
+num_ar_buckets = {num_ar_buckets}
+frame_buckets = [1]
 
-[[datasets]]
-resolution = {resolution}
-
-  [[datasets.subsets]]
-  num_repeats = {num_repeats}
-  image_dir = "{image_dir}"
-  caption_extension = ".txt"
-  caption_dropout_rate = {caption_dropout_rate}
+[[directory]]
+path = '{image_dir}'
+num_repeats = {num_repeats}
 """
     Path(out_path).write_text(toml, encoding="utf-8")
 
@@ -59,10 +57,17 @@ def main():
     for r in kept:
         write_pair(r["path"], r["caption"], dest)
 
-    toml_path = Path(cfg["paths"]["outputs"]) / f"{cfg['train']['project_name']}_dataset_config.toml"
+    fcfg = cfg["finetune"]
+    base = fcfg["base_dir"].rstrip("/")
+    vast_dataset_dir = f"{base}/data/dataset"   # where the dataset lives ON Vast
+    toml_path = Path(cfg["paths"]["outputs"]) / f"{fcfg['project_name']}_dataset_config.toml"
     toml_path.parent.mkdir(parents=True, exist_ok=True)
-    write_dataset_toml(toml_path, dest, ds["resolution"], ds["num_repeats"], ds["caption_dropout_rate"])
-    LOG.info("Stage 4 done. Dataset TOML -> %s", toml_path)
+    write_dataset_toml(
+        toml_path, image_dir=vast_dataset_dir,
+        resolutions=ds["resolutions"], min_ar=ds["min_ar"], max_ar=ds["max_ar"],
+        num_ar_buckets=ds["num_ar_buckets"], num_repeats=ds["num_repeats"],
+    )
+    LOG.info("Stage 4 done. dataset.toml -> %s (image_dir=%s)", toml_path, vast_dataset_dir)
 
 
 if __name__ == "__main__":

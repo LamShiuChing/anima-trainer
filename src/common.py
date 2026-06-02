@@ -72,21 +72,3 @@ def augment_manifest(path, updates_by_path):
         if key not in matched:
             LOG.warning("augment_manifest: no manifest row matched path %r (update dropped)", key)
     write_manifest(path, rows)
-
-
-def ensure_aesthetic_weights(cfg):
-    """Download the aesthetic MLP .pth once into models/aesthetic/ if absent. Returns the local Path."""
-    import urllib.request
-
-    dest = Path(cfg["quality"]["aesthetic_weights_file"])
-    if dest.exists():
-        return dest
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    url = cfg["quality"]["aesthetic_weights_url"]
-    LOG.info("Downloading aesthetic weights: %s", url)
-    # Download to a temp sibling then atomically replace, so an interrupted download
-    # never leaves a truncated file that a later run would wrongly skip.
-    tmp = dest.with_suffix(".tmp")
-    urllib.request.urlretrieve(url, tmp)
-    tmp.replace(dest)
-    return dest

@@ -71,6 +71,11 @@ class WDTaggerCaptioner:
 
 
 def main():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()                  # load GEMINI_API_KEY from .env into the environment
+    except ImportError:
+        pass                           # ok if not using a .env file (env var set another way)
     cfg = common.load_config()
     cap_cfg = cfg["caption"]
     rows = common.read_manifest(cfg["paths"]["manifest"])

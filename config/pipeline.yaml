@@ -65,7 +65,7 @@ dataset:
 finetune:                        # diffusion-pipe anima.toml (FULL finetune, not LoRA)
   base_dir: /workspace/anima     # Vast working dir (RUNBOOK sets this up)
   project_name: anima_realism_ft_v4    # v4 = warm-start from v3 epoch4, 6 more epochs (was undertrained at 4)
-  init_from: /workspace/anima/outputs/anima_realism_ft_v3/epoch4/epoch4.safetensors  # continue from v3 (empty = base DiT)
+  init_from: /workspace/anima/outputs/anima_realism_ft_v3/20260602_00-34-23/epoch4/epoch4.safetensors  # continue from v3 (empty = base DiT)
   epochs: 6                      # 6 more epochs on top of v3's 4 (effective ~10)
   lr: 8.0e-6                     # authors' full-finetune rec (8e-6 or lower); low to avoid catastrophic forgetting
   optimizer: adamw_optimi        # proven default; A100-80GB has VRAM to spare (no need for 8-bit)

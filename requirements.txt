@@ -17,3 +17,5 @@ huggingface_hub>=0.25
 tqdm>=4.66
 pytest>=8.0
 tomli>=2.0 ; python_version < "3.11"   # tomllib backport (system Python is 3.10)
+google-genai>=1.0       # Gemini structured captioning (v5)
+python-dotenv>=1.0      # load GEMINI_API_KEY from .env

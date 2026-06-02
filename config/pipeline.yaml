@@ -9,64 +9,45 @@ paths:
   trainer_dir: trainer
 
 ingest:
-  min_size: 512                  # kept for reference; not enforced when drop_small=false
-  blur_var_threshold: 100.0      # kept for reference; not enforced when drop_blurry=false
-  phash_hamming_threshold: 6     # <= this Hamming distance => near-duplicate (ALWAYS enforced)
+  min_size: 1024                 # v5: drop sub-1024 at ingest (training res; no wasted captions)
+  blur_var_threshold: 100.0      # v5: TUNE from the blur_var distribution before the real run
+  phash_hamming_threshold: 8     # v5: kill social-media reposts harder
   ocr_text_area_ratio_flag: 0.10 # only used when run_ocr_flag=true
-  drop_small: false              # v2: tag-don't-filter; diffusion-pipe AR-buckets handle small images
-  drop_blurry: false             # v2: keep blurry, they just won't score 'good'
-  run_ocr_flag: false            # v2: skip OCR entirely (we keep everything anyway)
+  drop_small: true               # v5: enforce the 1024 floor
+  drop_blurry: false             # v5: set true AFTER tuning blur_var_threshold (see RUNBOOK)
+  run_ocr_flag: false
 
-quality:
-  clip_model: openai/clip-vit-large-patch14
-  aesthetic_weights_url: https://github.com/christophschuhmann/improved-aesthetic-predictor/raw/main/sac%2Blogos%2Bava1-l14-linearMSE.pth
-  aesthetic_weights_file: models/aesthetic/sac+logos+ava1-l14-linearMSE.pth
-  bucket_good_min: 6.0           # score >= => good
-  bucket_medium_min: 5.0         # score >= => medium ; else bad
-
-caption:                         # v2.1: <quality>, <safety>, <NL description> (JoyCaption restored; still no trigger)
-  nsfw_model: Falconsai/nsfw_image_detection   # public ViT, 2-class (normal/nsfw); MichalMlodawski went private (401)
-  nsfw_label_map:                # substring of model label (upper) -> anima safety tag
+caption:                         # v5: WD14 tags + local safety + Gemini structured style/NL
+  nsfw_model: Falconsai/nsfw_image_detection
+  nsfw_label_map:
     NORMAL: safe
     NSFW: explicit
-  nsfw_default_tag: safe         # fallback if no label substring matches
-  quality_tag_map:
-    good: "masterpiece, best quality"
-    medium: "high quality"
-    bad: "low quality"
-  # --- Captioner: WD14 booru tags = Anima-native + ~single-forward-pass fast; VLMs = NL descriptions ---
-  captioner: wdtagger            # wdtagger (booru tags, fast) | toriigate (NL, 2B) | joycaption (NL, 8B)
-  # WD14 v3 tagger (booru content tags, uncensored). Needs `pip install dghs-imgutils`.
-  wd_model_name: SwinV2_v3       # fast v3 tagger
-  wd_general_threshold: 0.35     # keep tags scoring >= this
-  # SAFETY (hard boundary, adults only): drop — NOT tag — any image whose WD tags include an underage
-  # indicator. Exact tag match. Flagged images are excluded from training; review + delete real ones.
+  nsfw_default_tag: safe
   block_tags: [loli, shota, toddlercon, child, baby, infant, toddler, aged_down]
-  # ToriiGate v0.4 (Qwen2-VL based, uncensored). 2B = ~4GB, fast. Needs `pip install qwen-vl-utils`.
-  toriigate_model: Minthy/ToriiGate-v0.4-2B
-  toriigate_prompt_mode: long    # long (detailed) | short (medium-short)
-  toriigate_max_new_tokens: 200
-  # JoyCaption (fallback captioner, 8B)
-  joycaption_model: fancyfeast/llama-joycaption-beta-one-hf-llava
-  joycaption_prompt: "Write a detailed, factual description of this image: the people and their appearance, clothing (or lack of it), pose, expression, the setting, and lighting. Be concrete and direct. Do not comment on image quality, resolution, or aesthetics."
-  joycaption_max_new_tokens: 128   # ~half the gen time of 256; plenty for a training caption
-  joycaption_load_4bit: false    # A100/bf16 default. Set true ONLY on <=16GB GPUs (then `pip install bitsandbytes`).
+  wd_model_name: SwinV2_v3
+  wd_general_threshold: 0.35
+  gemini:
+    model: gemini-2.5-flash-lite     # cheapest vision model w/ free tier (2.0-flash-lite deprecated 2026-06-01)
+    safety_block_none: true          # BLOCK_NONE on the 4 adjustable categories; child-safety always on (Google core)
+    max_output_tokens: 256
+    max_retries: 4
+    cache_file: data/gemini_cache.json
 
 dataset:
-  buckets_to_keep: [good, medium]  # v3: drop low-quality bucket (it dragged the aesthetic toward blur)
-  min_resolution: 768            # v3: drop images whose min(w,h) < this (no upscaling soft images at 768 target)
+  min_resolution: 1024
   # diffusion-pipe dataset.toml params:
-  resolutions: [768]             # v3: 768 (1.5x Anima's native 512) for sharper detail; pairs with min_resolution
+  resolutions: [1024]             # v5: 1024 training resolution
   min_ar: 0.5                    # widest portrait bucket (1:2)
   max_ar: 2.0                    # widest landscape bucket (2:1)
   num_ar_buckets: 7
   num_repeats: 1                 # lots of data; no duplication needed
+  min_blur_var: 0.0              # backstop only (stage 1 does the real blur drop); raise if needed
 
 finetune:                        # diffusion-pipe anima.toml (FULL finetune, not LoRA)
   base_dir: /workspace/anima     # Vast working dir (RUNBOOK sets this up)
-  project_name: anima_realism_ft_v4    # v4 = warm-start from v3 epoch4, 6 more epochs (was undertrained at 4)
-  init_from: /workspace/anima/outputs/anima_realism_ft_v4/20260602_03-24-23/epoch1/model.safetensors  # continue from v4 epoch1 (empty = base DiT)
-  epochs: 6                      # 6 more epochs on top of v3's 4 (effective ~10)
+  project_name: anima_realism_ft_v5
+  init_from: ""                  # v5: from BASE DiT (no warm-start)
+  epochs: 20
   lr: 8.0e-6                     # authors' full-finetune rec (8e-6 or lower); low to avoid catastrophic forgetting
   optimizer: adamw_optimi        # proven default; A100-80GB has VRAM to spare (no need for 8-bit)
   warmup_steps: 100
@@ -75,7 +56,7 @@ finetune:                        # diffusion-pipe anima.toml (FULL finetune, not
   steps_per_print: 100           # deepspeed log cadence; 100 = ~1 clean status line / ~45s (default 1 = spam)
   llm_adapter_lr: 0              # freeze Qwen3 LLM adapter (domain shift; preserve text understanding)
   tag_dropout_percent: 0.10
-  caption_dropout_percent: 0.05  # CFG: % steps trained with empty caption
+  caption_dropout_percent: 0.10  # v5: CFG: % steps trained with empty caption
   dit_file: anima-base-v1.0.safetensors
   vae_file: qwen_image_vae.safetensors
   qwen_file: Qwen3-0.6B-Base    # HF DIR (loader needs tokenizer+config, not a single .safetensors); from Qwen/Qwen3-0.6B-Base

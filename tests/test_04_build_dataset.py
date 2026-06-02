@@ -8,27 +8,24 @@ from conftest import load_stage
 stage = load_stage("04_build_dataset.py")
 
 
-def test_curate_keeps_all_three_buckets():
+def test_curate_drops_dropped_rows_only_by_default():
     rows = [
-        {"path": "a.jpg", "dropped": "False", "bucket": "good", "caption": "c1"},
-        {"path": "b.jpg", "dropped": "False", "bucket": "medium", "caption": "c2"},
-        {"path": "c.jpg", "dropped": "False", "bucket": "bad", "caption": "c3"},
-        {"path": "d.jpg", "dropped": "True", "bucket": "good", "caption": "c4"},
+        {"path": "a.jpg", "dropped": "False"},
+        {"path": "b.jpg", "dropped": "True"},
     ]
-    kept = stage.curate(rows, buckets_to_keep=["good", "medium", "bad"])
-    assert {r["path"] for r in kept} == {"a.jpg", "b.jpg", "c.jpg"}  # only the dropped one excluded
+    kept = stage.curate(rows)
+    assert {r["path"] for r in kept} == {"a.jpg"}
 
 
-def test_curate_min_resolution_and_quality():
+def test_curate_min_resolution_and_blur():
     rows = [
-        {"path": "big_good.jpg", "dropped": "False", "bucket": "good", "width": "1024", "height": "800"},
-        {"path": "small_good.jpg", "dropped": "False", "bucket": "good", "width": "640", "height": "900"},   # min 640 < 768
-        {"path": "big_bad.jpg", "dropped": "False", "bucket": "bad", "width": "1200", "height": "1200"},     # bad bucket
-        {"path": "big_medium.jpg", "dropped": "False", "bucket": "medium", "width": "768", "height": "1000"},
-        {"path": "nosize.jpg", "dropped": "False", "bucket": "good"},                                        # no size -> excluded
+        {"path": "ok.jpg",    "dropped": "False", "width": "1024", "height": "1300", "blur_var": "250.0"},
+        {"path": "small.jpg", "dropped": "False", "width": "800",  "height": "1300", "blur_var": "250.0"},  # <1024
+        {"path": "soft.jpg",  "dropped": "False", "width": "1200", "height": "1200", "blur_var": "40.0"},   # <min_blur
+        {"path": "nosize.jpg","dropped": "False", "blur_var": "250.0"},                                     # missing size
     ]
-    kept = stage.curate(rows, buckets_to_keep=["good", "medium"], min_resolution=768)
-    assert {r["path"] for r in kept} == {"big_good.jpg", "big_medium.jpg"}
+    kept = stage.curate(rows, min_resolution=1024, min_blur_var=100.0)
+    assert {r["path"] for r in kept} == {"ok.jpg"}
 
 
 def test_dataset_toml_diffusion_pipe_schema(tmp_path):

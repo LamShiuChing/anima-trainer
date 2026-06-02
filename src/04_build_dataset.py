@@ -12,12 +12,12 @@ LOG = common.setup_logging()
 PASSTHROUGH_EXTS = {".jpg", ".jpeg", ".png"}
 
 
-def curate(rows, buckets_to_keep, min_resolution=0):
-    """Keep non-dropped rows in the wanted quality buckets. If min_resolution>0, also require
-    min(width,height) >= it (reads sizes recorded by stage 1 — no image re-read needed)."""
+def curate(rows, min_resolution=0, min_blur_var=0.0):
+    """Keep non-dropped rows. v5: no aesthetic-bucket filter (all buckets kept, tagged).
+    Optional technical gates read sizes/blur recorded by stage 1 (no image re-read)."""
     out = []
     for r in rows:
-        if r.get("dropped") != "False" or r.get("bucket") not in buckets_to_keep:
+        if r.get("dropped") != "False":
             continue
         if min_resolution:
             try:
@@ -25,6 +25,12 @@ def curate(rows, buckets_to_keep, min_resolution=0):
                     continue
             except (KeyError, ValueError):
                 continue  # no size on record -> exclude from a resolution-filtered run
+        if min_blur_var:
+            try:
+                if float(r["blur_var"]) < min_blur_var:
+                    continue
+            except (KeyError, ValueError):
+                continue
         out.append(r)
     return out
 
@@ -66,9 +72,9 @@ def main():
     cfg = common.load_config()
     ds = cfg["dataset"]
     rows = common.read_manifest(cfg["paths"]["manifest"])
-    kept = curate(rows, ds["buckets_to_keep"], ds.get("min_resolution", 0))
-    LOG.info("Stage 4: curated %d images (buckets=%s, min_resolution=%s)",
-             len(kept), ds["buckets_to_keep"], ds.get("min_resolution", 0))
+    kept = curate(rows, ds.get("min_resolution", 0), ds.get("min_blur_var", 0.0))
+    LOG.info("Stage 4: curated %d images (min_resolution=%s, min_blur_var=%s)",
+             len(kept), ds.get("min_resolution", 0), ds.get("min_blur_var", 0.0))
     dest = Path(cfg["paths"]["dataset"])
     # Safety: dest is wiped below; never let a misconfig point it at the raw/clean inputs.
     for protected in ("raw", "clean"):

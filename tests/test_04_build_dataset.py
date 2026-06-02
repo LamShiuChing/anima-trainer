@@ -10,19 +10,30 @@ stage = load_stage("04_build_dataset.py")
 
 def test_curate_drops_dropped_rows_only_by_default():
     rows = [
-        {"path": "a.jpg", "dropped": "False"},
-        {"path": "b.jpg", "dropped": "True"},
+        {"path": "a.jpg", "dropped": "False", "caption": "realistic photo, safe, x"},
+        {"path": "b.jpg", "dropped": "True", "caption": "realistic photo, safe, y"},
     ]
     kept = stage.curate(rows)
     assert {r["path"] for r in kept} == {"a.jpg"}
 
 
-def test_curate_min_resolution_and_blur():
+def test_curate_requires_caption():
     rows = [
-        {"path": "ok.jpg",    "dropped": "False", "width": "1024", "height": "1300", "blur_var": "250.0"},
-        {"path": "small.jpg", "dropped": "False", "width": "800",  "height": "1300", "blur_var": "250.0"},  # <1024
-        {"path": "soft.jpg",  "dropped": "False", "width": "1200", "height": "1200", "blur_var": "40.0"},   # <min_blur
-        {"path": "nosize.jpg","dropped": "False", "blur_var": "250.0"},                                     # missing size
+        {"path": "has.jpg", "dropped": "False", "caption": "realistic photo, safe, x"},
+        {"path": "none.jpg", "dropped": "False"},                 # stage-3 skipped -> no caption
+        {"path": "empty.jpg", "dropped": "False", "caption": ""},  # empty caption
+    ]
+    kept = stage.curate(rows)
+    assert {r["path"] for r in kept} == {"has.jpg"}   # only the captioned row is buildable
+
+
+def test_curate_min_resolution_and_blur():
+    cap = "realistic photo, safe, x"
+    rows = [
+        {"path": "ok.jpg",    "dropped": "False", "caption": cap, "width": "1024", "height": "1300", "blur_var": "250.0"},
+        {"path": "small.jpg", "dropped": "False", "caption": cap, "width": "800",  "height": "1300", "blur_var": "250.0"},  # <1024
+        {"path": "soft.jpg",  "dropped": "False", "caption": cap, "width": "1200", "height": "1200", "blur_var": "40.0"},   # <min_blur
+        {"path": "nosize.jpg","dropped": "False", "caption": cap, "blur_var": "250.0"},                                     # missing size
     ]
     kept = stage.curate(rows, min_resolution=1024, min_blur_var=100.0)
     assert {r["path"] for r in kept} == {"ok.jpg"}

@@ -19,6 +19,8 @@ def curate(rows, min_resolution=0, min_blur_var=0.0):
     for r in rows:
         if r.get("dropped") != "False":
             continue
+        if not r.get("caption"):
+            continue  # uncaptioned (stage 3 skipped/failed the row) -> nothing to build
         if min_resolution:
             try:
                 if min(int(r["width"]), int(r["height"])) < min_resolution:
@@ -84,8 +86,14 @@ def main():
         shutil.rmtree(dest)  # rebuild cleanly (idempotent)
     LOG.info("Stage 4: curated %d images -> %s", len(kept), dest)
 
+    written = 0
     for r in kept:
+        if not Path(r["path"]).exists():
+            LOG.warning("Stage 4: source missing, skipping %s", r["path"])
+            continue
         write_pair(r["path"], r["caption"], dest)
+        written += 1
+    LOG.info("Stage 4: wrote %d image+caption pairs", written)
 
     fcfg = cfg["finetune"]
     base = fcfg["base_dir"].rstrip("/")

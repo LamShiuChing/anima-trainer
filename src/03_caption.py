@@ -83,9 +83,9 @@ def main():
     cache_file = cap_cfg["gemini"]["cache_file"]
     gem = gcap.GeminiCaptioner(cfg, cache=gcap.load_cache(cache_file))
 
-    updates, blocked, skipped = {}, 0, 0
+    updates, blocked, skipped, captioned = {}, 0, 0, 0
     try:
-        for idx, r in enumerate(tqdm(kept, desc="caption", unit="img", dynamic_ncols=True)):
+        for r in tqdm(kept, desc="caption", unit="img", dynamic_ncols=True):
             if not Path(r["path"]).exists():       # spot-review: file culled -> skip
                 skipped += 1
                 continue
@@ -99,11 +99,14 @@ def main():
             parts = gem.caption(r["path"], tags)
             caption = gcap.assemble_caption(parts, safety, tags)
             updates[r["path"]] = {"safety_tag": safety, "quality_tag": parts["quality_level"], "caption": caption}
-            if idx < 3:
-                tqdm.write(f"[sample {idx}] {caption}")
+            if captioned < 3:
+                tqdm.write(f"[sample {captioned}] {caption}")
+            captioned += 1
     finally:
         gcap.save_cache(cache_file, gem.cache)     # persist even on interrupt (resumable)
 
+    # Outside the try: the cache (saved in finally) prevents re-billing on resume, while the manifest
+    # is only updated on a clean finish so rows are never left partially written.
     common.augment_manifest(cfg["paths"]["manifest"], updates)
     LOG.info("Stage 3 done. blocked(underage)=%d skipped(missing-file)=%d", blocked, skipped)
 

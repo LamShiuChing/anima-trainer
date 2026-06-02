@@ -53,9 +53,10 @@ caption:                         # v2.1: <quality>, <safety>, <NL description> (
   joycaption_load_4bit: false    # A100/bf16 default. Set true ONLY on <=16GB GPUs (then `pip install bitsandbytes`).
 
 dataset:
-  buckets_to_keep: [good, medium, bad]  # v2: keep all; mixed quality becomes a tag, not a discard
+  buckets_to_keep: [good, medium]  # v3: drop low-quality bucket (it dragged the aesthetic toward blur)
+  min_resolution: 768            # v3: drop images whose min(w,h) < this (no upscaling soft images at 768 target)
   # diffusion-pipe dataset.toml params:
-  resolutions: [512]             # Anima native res; run 1. diffusion-pipe resizes to this AREA (upscales smaller imgs), so 512 minimizes upscaling on social data
+  resolutions: [768]             # v3: 768 (1.5x Anima's native 512) for sharper detail; pairs with min_resolution
   min_ar: 0.5                    # widest portrait bucket (1:2)
   max_ar: 2.0                    # widest landscape bucket (2:1)
   num_ar_buckets: 7
@@ -63,7 +64,7 @@ dataset:
 
 finetune:                        # diffusion-pipe anima.toml (FULL finetune, not LoRA)
   base_dir: /workspace/anima     # Vast working dir (RUNBOOK sets this up)
-  project_name: anima_realism_ft_v2    # v2 = JoyCaption descriptive captions (v1 was tag-only/blurry). Separate output folder.
+  project_name: anima_realism_ft_v3    # v3 = WD tags + 768 res + curated (good/medium, >=768px). v2 was 512/all-quality.
   epochs: 4                      # run-1 proof; domain shift shows fast. preview each epoch, extend later if wanted
   lr: 8.0e-6                     # authors' full-finetune rec (8e-6 or lower); low to avoid catastrophic forgetting
   optimizer: adamw_optimi        # proven default; A100-80GB has VRAM to spare (no need for 8-bit)

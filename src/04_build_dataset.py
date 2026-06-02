@@ -12,8 +12,21 @@ LOG = common.setup_logging()
 PASSTHROUGH_EXTS = {".jpg", ".jpeg", ".png"}
 
 
-def curate(rows, buckets_to_keep):
-    return [r for r in rows if r.get("dropped") == "False" and r.get("bucket") in buckets_to_keep]
+def curate(rows, buckets_to_keep, min_resolution=0):
+    """Keep non-dropped rows in the wanted quality buckets. If min_resolution>0, also require
+    min(width,height) >= it (reads sizes recorded by stage 1 — no image re-read needed)."""
+    out = []
+    for r in rows:
+        if r.get("dropped") != "False" or r.get("bucket") not in buckets_to_keep:
+            continue
+        if min_resolution:
+            try:
+                if min(int(r["width"]), int(r["height"])) < min_resolution:
+                    continue
+            except (KeyError, ValueError):
+                continue  # no size on record -> exclude from a resolution-filtered run
+        out.append(r)
+    return out
 
 
 def write_pair(img_path, caption, dest_dir):
@@ -53,7 +66,9 @@ def main():
     cfg = common.load_config()
     ds = cfg["dataset"]
     rows = common.read_manifest(cfg["paths"]["manifest"])
-    kept = curate(rows, ds["buckets_to_keep"])
+    kept = curate(rows, ds["buckets_to_keep"], ds.get("min_resolution", 0))
+    LOG.info("Stage 4: curated %d images (buckets=%s, min_resolution=%s)",
+             len(kept), ds["buckets_to_keep"], ds.get("min_resolution", 0))
     dest = Path(cfg["paths"]["dataset"])
     # Safety: dest is wiped below; never let a misconfig point it at the raw/clean inputs.
     for protected in ("raw", "clean"):

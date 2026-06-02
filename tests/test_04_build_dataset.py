@@ -19,6 +19,18 @@ def test_curate_keeps_all_three_buckets():
     assert {r["path"] for r in kept} == {"a.jpg", "b.jpg", "c.jpg"}  # only the dropped one excluded
 
 
+def test_curate_min_resolution_and_quality():
+    rows = [
+        {"path": "big_good.jpg", "dropped": "False", "bucket": "good", "width": "1024", "height": "800"},
+        {"path": "small_good.jpg", "dropped": "False", "bucket": "good", "width": "640", "height": "900"},   # min 640 < 768
+        {"path": "big_bad.jpg", "dropped": "False", "bucket": "bad", "width": "1200", "height": "1200"},     # bad bucket
+        {"path": "big_medium.jpg", "dropped": "False", "bucket": "medium", "width": "768", "height": "1000"},
+        {"path": "nosize.jpg", "dropped": "False", "bucket": "good"},                                        # no size -> excluded
+    ]
+    kept = stage.curate(rows, buckets_to_keep=["good", "medium"], min_resolution=768)
+    assert {r["path"] for r in kept} == {"big_good.jpg", "big_medium.jpg"}
+
+
 def test_dataset_toml_diffusion_pipe_schema(tmp_path):
     out = tmp_path / "dataset.toml"
     stage.write_dataset_toml(

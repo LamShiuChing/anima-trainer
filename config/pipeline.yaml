@@ -10,11 +10,11 @@ paths:
 
 ingest:
   min_size: 1024                 # v5: drop sub-1024 at ingest (training res; no wasted captions)
-  blur_var_threshold: 100.0      # v5: TUNE from the blur_var distribution before the real run
+  blur_var_threshold: 100.0      # v5: tuned from blur_var distribution (p33≈76, classic cutoff 100) -> keeps ~1948
   phash_hamming_threshold: 8     # v5: kill social-media reposts harder
   ocr_text_area_ratio_flag: 0.10 # only used when run_ocr_flag=true
   drop_small: true               # v5: enforce the 1024 floor
-  drop_blurry: false             # v5: set true AFTER tuning blur_var_threshold (see RUNBOOK)
+  drop_blurry: true              # v5: drop blur_var < threshold (tuned 2026-06-02)
   run_ocr_flag: false
 
 caption:                         # v5: WD14 tags + local safety + Gemini structured style/NL

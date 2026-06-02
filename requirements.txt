@@ -8,11 +8,10 @@ pyyaml>=6.0
 imagehash>=4.3
 opencv-python>=4.9
 rapidocr-onnxruntime>=1.3   # only needed if ingest.run_ocr_flag=true (off by default in v2)
-transformers>=4.45,<5    # CLIP aesthetic + NSFW classifier + Qwen2-VL (ToriiGate) + LLaVA (JoyCaption)
+transformers>=4.45,<5    # NSFW safety classifier (Falconsai ViT)
 accelerate>=0.34
 sentencepiece>=0.2
-qwen-vl-utils>=0.0.8     # ToriiGate (Qwen2-VL) image preprocessing
-dghs-imgutils>=0.4       # WD14 booru tagger (fast, default captioner)
+dghs-imgutils>=0.4       # WD14 booru tagger (content tags + underage block)
 huggingface_hub>=0.25
 tqdm>=4.66
 pytest>=8.0

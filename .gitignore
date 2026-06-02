@@ -3,6 +3,8 @@ outputs/
 models/
 trainer/
 .venv/
+.env
+.env.*
 __pycache__/
 *.pyc
 .pytest_cache/

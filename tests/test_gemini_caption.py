@@ -112,3 +112,11 @@ def test_cache_roundtrip(tmp_path):
     gc.save_cache(path, {"a.jpg": {"nl": "x"}})
     assert gc.load_cache(path) == {"a.jpg": {"nl": "x"}}
     assert gc.load_cache(tmp_path / "missing.json") == {}
+
+
+def test_mime_for_by_extension():
+    assert gc.mime_for("a.jpg") == "image/jpeg"
+    assert gc.mime_for("a.JPEG") == "image/jpeg"
+    assert gc.mime_for("b.png") == "image/png"
+    assert gc.mime_for("c.webp") == "image/webp"
+    assert gc.mime_for("d.unknown") == "image/jpeg"

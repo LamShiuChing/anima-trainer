@@ -5,6 +5,10 @@ local NSFW safety tag (Falconsai), and one Gemini call for the enum-locked style
 Caption assembly + Gemini live in gemini_caption.py. Rows whose file no longer exists are
 skipped (enables manual spot-review by deleting files from data/clean before this stage).
 """
+import os
+os.environ.setdefault("USE_TF", "0")    # torch-only: stop transformers importing TensorFlow (breaks under numpy 2.x)
+os.environ.setdefault("USE_FLAX", "0")
+
 from pathlib import Path
 
 import torch

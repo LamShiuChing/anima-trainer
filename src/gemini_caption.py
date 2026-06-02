@@ -26,6 +26,15 @@ def clean_nl(text):
     return text.rstrip(".").strip()
 
 
+_MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+         ".webp": "image/webp", ".gif": "image/gif"}
+
+
+def mime_for(path):
+    """Gemini needs the correct image mime type; data/clean keeps original formats (jpg/png/webp)."""
+    return _MIME.get(Path(path).suffix.lower(), "image/jpeg")
+
+
 def build_schema(vocab=VOCAB):
     return {
         "type": "object",
@@ -137,7 +146,7 @@ class GeminiCaptioner:
             types.HarmCategory.HARM_CATEGORY_DANGEROUS,
         )] if self.block_none else None
         img = types.Part.from_bytes(data=Path(path).read_bytes(),
-                                    mime_type="image/jpeg")
+                                    mime_type=mime_for(path))
         cfg = types.GenerateContentConfig(
             safety_settings=safety,
             response_mime_type="application/json",

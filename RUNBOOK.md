@@ -126,3 +126,17 @@ scp -P <SSH_PORT> root@<INSTANCE_IP>:$ANIMA_BASE/outputs/anima_realism_ft_v1/'*.
   and adjust the map substrings.
 - **Instance interrupted mid-train:** re-rent, re-run setup, and resume with diffusion-pipe's
   `--resume_from_checkpoint` pointing at the last saved global step dir.
+
+## v5 run (1024, from base, Gemini captions)
+
+0. FREE pre-check: generate from v3-epoch4 at 1024 (matched res) before any GPU spend.
+1. `.env`: copy `.env.example` -> `.env`, set GEMINI_API_KEY (throwaway/project key).
+2. Stage 1 ingest (drop_small=true, min_size=1024, drop_blurry=false): records blur_var, drops <1024 + dups.
+3. Tune sharpness: inspect the blur_var column distribution of kept rows; pick a threshold at the soft
+   tail. Set ingest.blur_var_threshold + ingest.drop_blurry=true, re-run stage 1.
+4. Spot-review: delete obviously-bad survivors from data/clean (stage 3 skips missing files).
+5. Stage 3 caption: WD14 + safety + Gemini (resumable via data/gemini_cache.json). Sanity-check the
+   first ~50 captions; adjust the Gemini prompt rubric if quality buckets skew.
+6. Stage 4 build (min_resolution=1024, optional min_blur_var backstop) + Stage 5 anima.toml
+   (init_from="" => base DiT, epochs=20). Confirm post-gate image count is sufficient.
+7. Upload data/dataset + tomls to Vast; train; preview each epoch in ComfyUI; stop at best.

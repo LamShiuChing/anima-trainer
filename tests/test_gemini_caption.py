@@ -69,3 +69,46 @@ def test_build_prompt_includes_tags_and_no_anchor_instruction():
     p = gc.build_prompt("woman, kitchen")
     assert "woman, kitchen" in p
     assert "JSON" in p
+
+
+# --- append to tests/test_gemini_caption.py ---
+
+def _cfg(tmp_path):
+    return {"caption": {"gemini": {"model": "gemini-2.5-flash-lite", "safety_block_none": True,
+                                   "max_output_tokens": 256, "max_retries": 2,
+                                   "cache_file": str(tmp_path / "cache.json")}}}
+
+
+def test_captioner_calls_generate_and_coerces(tmp_path):
+    def fake_generate(path, tags):
+        return {"quality_level": "high quality", "capture_style": "amateur snapshot",
+                "lighting": [], "condition": [], "has_watermark": False, "description": "a dog"}
+    cap = gc.GeminiCaptioner(_cfg(tmp_path), generate=fake_generate)
+    out = cap.caption("x.jpg", "dog")
+    assert out["quality_level"] == "high quality"
+    assert out["nl"] == "a dog"
+
+
+def test_captioner_cache_hit_skips_generate(tmp_path):
+    def boom(path, tags):
+        raise AssertionError("generate must not be called on a cache hit")
+    seeded = {"x.jpg": {"quality_level": "low quality", "capture_style": "", "lighting": [],
+                        "condition": [], "has_watermark": False, "nl": "cached"}}
+    cap = gc.GeminiCaptioner(_cfg(tmp_path), generate=boom, cache=seeded)
+    assert cap.caption("x.jpg", "dog")["nl"] == "cached"
+
+
+def test_captioner_refusal_returns_blank_for_fallback(tmp_path):
+    def refuse(path, tags):
+        raise RuntimeError("blocked")           # API refusal / error
+    cap = gc.GeminiCaptioner(_cfg(tmp_path), generate=refuse)
+    out = cap.caption("x.jpg", "nude, bed")
+    assert out == {"quality_level": "", "capture_style": "", "lighting": [],
+                   "condition": [], "has_watermark": False, "nl": ""}  # -> assemble = tags only
+
+
+def test_cache_roundtrip(tmp_path):
+    path = tmp_path / "c.json"
+    gc.save_cache(path, {"a.jpg": {"nl": "x"}})
+    assert gc.load_cache(path) == {"a.jpg": {"nl": "x"}}
+    assert gc.load_cache(tmp_path / "missing.json") == {}

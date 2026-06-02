@@ -3,7 +3,9 @@
 Caption format (anchor prepended here, NOT by Gemini):
   realistic photo, <quality>, <capture_style>, <lighting...>, <condition...>, <safety>, <wd14 tags>[, watermark][, <nl>]
 """
+import json
 import re
+from pathlib import Path
 
 ANCHOR = "realistic photo"
 
@@ -81,3 +83,73 @@ def assemble_caption(parts, safety_tag, wd14_tags):
     if parts["nl"]:
         p.append(parts["nl"])
     return ", ".join(x for x in p if x)
+
+
+def load_cache(path):
+    path = Path(path)
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def save_cache(path, cache):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(cache), encoding="utf-8")
+
+
+class GeminiCaptioner:
+    """Captions one image -> coerced style dict. `generate(path, tags) -> raw dict` is injectable
+    (tests pass a fake). On any generate error/refusal the image falls back to a blank dict, which
+    assemble_caption renders as anchor + safety + tags only."""
+    def __init__(self, cfg, generate=None, cache=None):
+        g = cfg["caption"]["gemini"]
+        self.model = g["model"]
+        self.max_output_tokens = g.get("max_output_tokens", 256)
+        self.max_retries = g.get("max_retries", 4)
+        self.block_none = g.get("safety_block_none", True)
+        self.schema = build_schema()
+        self.cache = cache if cache is not None else {}
+        self._generate = generate or self._default_generate
+
+    def caption(self, path, wd14_tags):
+        key = str(path)
+        if key in self.cache:
+            return self.cache[key]
+        try:
+            raw = self._generate(path, wd14_tags)
+        except Exception:
+            raw = {}                       # refusal/rate-limit-exhausted/error -> tags-only fallback
+        result = coerce_response(raw)
+        self.cache[key] = result
+        return result
+
+    def _default_generate(self, path, wd14_tags):
+        """Real Gemini call. Not unit-tested (network). Returns a parsed JSON dict or {}."""
+        from google import genai
+        from google.genai import types
+        client = genai.Client()            # reads GEMINI_API_KEY
+        none = types.HarmBlockThreshold.BLOCK_NONE
+        safety = [types.SafetySetting(category=c, threshold=none) for c in (
+            types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+            types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            types.HarmCategory.HARM_CATEGORY_DANGEROUS,
+        )] if self.block_none else None
+        img = types.Part.from_bytes(data=Path(path).read_bytes(),
+                                    mime_type="image/jpeg")
+        cfg = types.GenerateContentConfig(
+            safety_settings=safety,
+            response_mime_type="application/json",
+            response_schema=self.schema,
+            max_output_tokens=self.max_output_tokens,
+        )
+        last = None
+        for _ in range(self.max_retries):
+            try:
+                resp = client.models.generate_content(
+                    model=self.model, contents=[img, build_prompt(wd14_tags)], config=cfg)
+                return json.loads(resp.text) if resp.text else {}
+            except Exception as e:           # rate-limit/5xx -> retry; final raises -> caption() fallback
+                last = e
+        raise last

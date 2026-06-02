@@ -5,6 +5,8 @@ Caption format (anchor prepended here, NOT by Gemini):
 """
 import json
 import re
+import threading
+import time
 from pathlib import Path
 
 ANCHOR = "realistic photo"
@@ -118,20 +120,45 @@ class GeminiCaptioner:
         self.max_retries = g.get("max_retries", 4)
         self.block_none = g.get("safety_block_none", True)
         self.schema = build_schema()
+        self.concurrency = g.get("concurrency", 10)
         self.cache = cache if cache is not None else {}
+        self._lock = threading.Lock()      # guards self.cache during concurrent caption_many
         self._generate = generate or self._default_generate
 
     def caption(self, path, wd14_tags):
         key = str(path)
-        if key in self.cache:
-            return self.cache[key]
+        with self._lock:
+            if key in self.cache:
+                return self.cache[key]
         try:
             raw = self._generate(path, wd14_tags)
+            errored = False
         except Exception:
-            raw = {}                       # refusal/rate-limit-exhausted/error -> tags-only fallback
+            raw, errored = {}, True        # network/API/config error -> blank now, but DO NOT cache (retry next run)
         result = coerce_response(raw)
-        self.cache[key] = result
+        if not errored:
+            with self._lock:
+                self.cache[key] = result   # cache successes incl. legit empty refusals; never cache errors
         return result
+
+    def caption_many(self, items, on_result=None):
+        """items: iterable of (path, wd14_tags). Captions concurrently (thread pool size=self.concurrency).
+        Returns {path: parts}. on_result(path, parts) runs in the calling thread as each finishes
+        (use for progress + early-abort). Cache-aware and thread-safe."""
+        from concurrent.futures import ThreadPoolExecutor
+        items = list(items)
+        results = {}
+
+        def work(it):
+            path, tags = it
+            return path, self.caption(path, tags)
+
+        with ThreadPoolExecutor(max_workers=max(1, self.concurrency)) as ex:
+            for path, parts in ex.map(work, items):
+                results[path] = parts
+                if on_result is not None:
+                    on_result(path, parts)
+        return results
 
     def _default_generate(self, path, wd14_tags):
         """Real Gemini call. Not unit-tested (network). Returns a parsed JSON dict or {}."""
@@ -143,7 +170,7 @@ class GeminiCaptioner:
             types.HarmCategory.HARM_CATEGORY_HARASSMENT,
             types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
             types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-            types.HarmCategory.HARM_CATEGORY_DANGEROUS,
+            types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
         )] if self.block_none else None
         img = types.Part.from_bytes(data=Path(path).read_bytes(),
                                     mime_type=mime_for(path))
@@ -154,11 +181,13 @@ class GeminiCaptioner:
             max_output_tokens=self.max_output_tokens,
         )
         last = None
-        for _ in range(self.max_retries):
+        for attempt in range(self.max_retries):
             try:
                 resp = client.models.generate_content(
                     model=self.model, contents=[img, build_prompt(wd14_tags)], config=cfg)
                 return json.loads(resp.text) if resp.text else {}
-            except Exception as e:           # rate-limit/5xx -> retry; final raises -> caption() fallback
+            except Exception as e:           # rate-limit/5xx -> backoff + retry; final raises -> caption() fallback
                 last = e
+                if attempt < self.max_retries - 1:
+                    time.sleep(min(2 ** attempt, 30))   # exp backoff capped 30s (self-throttles 429 under concurrency)
         raise last

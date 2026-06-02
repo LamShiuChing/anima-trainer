@@ -31,6 +31,7 @@ caption:                         # v5: WD14 tags + local safety + Gemini structu
     safety_block_none: true          # BLOCK_NONE on the 4 adjustable categories; child-safety always on (Google core)
     max_output_tokens: 256
     max_retries: 4
+    concurrency: 12                  # parallel Gemini calls. Free tier (~15 RPM): lower to ~4. Paid tier 1+: raise to 20-50. 429s self-throttle via backoff.
     cache_file: data/gemini_cache.json
 
 dataset:

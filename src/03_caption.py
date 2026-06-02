@@ -92,32 +92,58 @@ def main():
     cache_file = cap_cfg["gemini"]["cache_file"]
     gem = gcap.GeminiCaptioner(cfg, cache=gcap.load_cache(cache_file))
 
-    updates, blocked, skipped, captioned = {}, 0, 0, 0
+    updates, blocked, skipped = {}, 0, 0
+
+    # Pass 1 (serial, local GPU): WD14 tags + underage hard-block + NSFW safety tag.
+    worklist = []   # (row, tags, safety) for survivors
+    for r in tqdm(kept, desc="tag+safety", unit="img", dynamic_ncols=True):
+        if not Path(r["path"]).exists():           # spot-review: file culled -> skip
+            skipped += 1
+            continue
+        tags = wd.caption(r["path"])
+        hit = underage_hit(tags, block_terms)
+        if hit:
+            updates[r["path"]] = {"dropped": "True", "drop_reason": "underage_flag:" + ",".join(sorted(hit))}
+            blocked += 1
+            continue
+        worklist.append((r, tags, nsfw.tag(r["path"])))
+
+    # Pre-flight: one real Gemini call so a systematic error (auth/SDK/config) aborts LOUDLY here,
+    # before the concurrent pass silently falls back to tags-only for every image.
+    if worklist:
+        r0, tags0, safety0 = worklist[0]
+        try:
+            raw0 = gem._default_generate(r0["path"], tags0)
+        except Exception as e:
+            raise RuntimeError(f"Gemini pre-flight call failed: {e!r}. Fix before the full run "
+                               f"(no captions were written).") from e
+        LOG.info("Gemini pre-flight OK. Sample caption:\n  %s",
+                 gcap.assemble_caption(gcap.coerce_response(raw0), safety0, tags0)[:250])
+
+    # Pass 2 (concurrent): one Gemini call per survivor, thread-pooled (size = caption.gemini.concurrency).
+    tags_by_path = {r["path"]: tags for (r, tags, _s) in worklist}
+    safety_by_path = {r["path"]: safety for (r, _t, safety) in worklist}
+    gemini_ok = [0]
+    bar = tqdm(total=len(worklist), desc="gemini", unit="img", dynamic_ncols=True)
+
+    def on_result(path, parts):
+        bar.update(1)
+        if parts["quality_level"]:
+            gemini_ok[0] += 1
+        caption = gcap.assemble_caption(parts, safety_by_path[path], tags_by_path[path])
+        updates[path] = {"safety_tag": safety_by_path[path], "quality_tag": parts["quality_level"], "caption": caption}
+
     try:
-        for r in tqdm(kept, desc="caption", unit="img", dynamic_ncols=True):
-            if not Path(r["path"]).exists():       # spot-review: file culled -> skip
-                skipped += 1
-                continue
-            tags = wd.caption(r["path"])
-            hit = underage_hit(tags, block_terms)
-            if hit:
-                updates[r["path"]] = {"dropped": "True", "drop_reason": "underage_flag:" + ",".join(sorted(hit))}
-                blocked += 1
-                continue
-            safety = nsfw.tag(r["path"])
-            parts = gem.caption(r["path"], tags)
-            caption = gcap.assemble_caption(parts, safety, tags)
-            updates[r["path"]] = {"safety_tag": safety, "quality_tag": parts["quality_level"], "caption": caption}
-            if captioned < 3:
-                tqdm.write(f"[sample {captioned}] {caption}")
-            captioned += 1
+        gem.caption_many([(r["path"], tags) for (r, tags, _s) in worklist], on_result=on_result)
     finally:
+        bar.close()
         gcap.save_cache(cache_file, gem.cache)     # persist even on interrupt (resumable)
 
-    # Outside the try: the cache (saved in finally) prevents re-billing on resume, while the manifest
-    # is only updated on a clean finish so rows are never left partially written.
+    # Outside the try: cache (saved in finally) prevents re-billing on resume; manifest is updated only
+    # on a clean finish so rows are never left partially written.
     common.augment_manifest(cfg["paths"]["manifest"], updates)
-    LOG.info("Stage 3 done. blocked(underage)=%d skipped(missing-file)=%d", blocked, skipped)
+    LOG.info("Stage 3 done. captioned=%d gemini_ok=%d blocked(underage)=%d skipped(missing)=%d",
+             len(worklist), gemini_ok[0], blocked, skipped)
 
 
 if __name__ == "__main__":

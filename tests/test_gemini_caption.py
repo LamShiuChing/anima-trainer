@@ -120,3 +120,30 @@ def test_mime_for_by_extension():
     assert gc.mime_for("b.png") == "image/png"
     assert gc.mime_for("c.webp") == "image/webp"
     assert gc.mime_for("d.unknown") == "image/jpeg"
+
+
+def test_captioner_does_not_cache_on_error(tmp_path):
+    calls = {"n": 0}
+    def flaky(path, tags):
+        calls["n"] += 1
+        raise RuntimeError("transient")
+    cap = gc.GeminiCaptioner(_cfg(tmp_path), generate=flaky)
+    cap.caption("x.jpg", "t")      # error -> blank, must NOT be cached
+    cap.caption("x.jpg", "t")      # so this retries instead of a cache hit
+    assert calls["n"] == 2
+
+
+def test_caption_many_runs_all_and_caches(tmp_path):
+    def fake(path, tags):
+        return {"quality_level": "high quality", "capture_style": "amateur snapshot",
+                "lighting": [], "condition": [], "has_watermark": False, "description": path}
+    cfg = _cfg(tmp_path)
+    cfg["caption"]["gemini"]["concurrency"] = 4
+    cap = gc.GeminiCaptioner(cfg, generate=fake)
+    got = []
+    res = cap.caption_many([("a.jpg", "t1"), ("b.jpg", "t2"), ("c.jpg", "t3")],
+                           on_result=lambda p, parts: got.append(p))
+    assert set(res) == {"a.jpg", "b.jpg", "c.jpg"}
+    assert res["b.jpg"]["nl"] == "b.jpg"
+    assert set(got) == {"a.jpg", "b.jpg", "c.jpg"}        # on_result fired per image
+    assert set(cap.cache) == {"a.jpg", "b.jpg", "c.jpg"}  # all cached

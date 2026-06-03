@@ -110,6 +110,28 @@ Claude) + best epoch BEFORE destroying.** Then eval v5-ep20 + v6 ep1..5 with the
 **Carried-over tradeoff:** v5's `blur≥100` gate biased toward sharp/pro shots → `amateur snapshot` token weakly
 trained. The probe doesn't fix this (same data); a future `min_res 768`/looser-blur run would.
 
+### V7 captioning overhaul (decisions 2026-06-03; enum vocab under review)
+Goal: richer + more controllable captions (caption == inference prompt). Pairs with V7 = **1536 train + higher LR
++ more/originals data**. Decisions:
+- **DROP the `realistic photo` anchor** — 100% photo data ⇒ a token on every image carries no signal.
+  ⚠️ only safe if V7 **warm-starts from the v6 keeper** (from-base would lose the anti-anime switch); recommend warm-start.
+- **Expand enums** (controllability). Discipline: **populate-or-dead** (~50–100+ imgs/token) + prefer **booru-native
+  vocab** (Anima base has priors → strong, cheap triggers). New slots: `shot_type`, `camera_angle`, `camera_lens`,
+  `depth_of_field`, `color_grade`, `expression`; `quality` → booru ladder (masterpiece…worst quality); `resolution`
+  (absurdres/highres/lowres) **auto-derived from pixel size in stage 1, not Gemini**.
+- **Division of labor:** enums = photographic/style layer; **content (person/hair/clothes/accessories/setting) =
+  WD14 booru tags + rich NL** (too open to enumerate).
+- **Rating via Gemini** (booru ladder `rating:general/sensitive/questionable/explicit`) replaces binary safe/explicit.
+- **NSFW adult: no local block** (already all→Gemini, BLOCK_NONE, refuse→WD14-tags-only fallback). Gemini emits rating.
+- **WD14 more detailed:** swap SwinV2_v3 → **EVA02-Large v3**, lower `general_threshold` ~0.25–0.3. Key for the ~43%
+  explicit images Gemini refuses (booru anatomical tags = the NSFW caption richness). Tradeoff: more noise tags.
+- **Gemini NL richer:** describe background/objects/materials/accessories; `max_output_tokens` 256→~450.
+- 🚫 **WD14 underage hard-block KEPT — non-negotiable.** User states dataset is all-adult; the block is then a
+  **no-op** (drops nothing) and exists purely as a backstop against a single mislabeled/slipped file. Zero cost to
+  keep, catastrophic+illegal risk if removed. Not a quality setting.
+- Code: `src/gemini_caption.py` (`VOCAB`, `build_schema`, `build_prompt`, `coerce_response`, `assemble_caption`),
+  WD14 in `src/03_caption.py`. Full vocab table in chat 2026-06-03 → fold into a V7 caption spec before building.
+
 ## Dataset
 
 - ~3000 photos from social media (Reddit, X, Threads) → expect JPEG artifacts, watermarks, text

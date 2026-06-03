@@ -8,6 +8,9 @@ DP_DIR="$BASE/diffusion-pipe"
 MODELS="$BASE/models"
 HF="https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files"
 
+# HF's Xet transport (cas-bridge.xethub.hf.co) is flaky on some Vast hosts -> force classic HTTP.
+export HF_HUB_DISABLE_XET=1
+
 mkdir -p "$MODELS" "$BASE/data" "$BASE/outputs"
 
 # 1) diffusion-pipe (Anima fork) + submodules
@@ -22,14 +25,24 @@ pip install --upgrade pip
 pip install deepspeed
 pip install -r requirements.txt
 
-# 3) Anima DiT + VAE (single files)
-wget -c -O "$MODELS/anima-base-v1.0.safetensors" "$HF/diffusion_models/anima-base-v1.0.safetensors"
-wget -c -O "$MODELS/qwen_image_vae.safetensors"   "$HF/vae/qwen_image_vae.safetensors"
+# 3) Anima DiT + VAE (single files). -c resumes, --tries retries flaky connections.
+wget -c --tries=10 --retry-connrefused --waitretry=5 -O "$MODELS/anima-base-v1.0.safetensors" "$HF/diffusion_models/anima-base-v1.0.safetensors"
+wget -c --tries=10 --retry-connrefused --waitretry=5 -O "$MODELS/qwen_image_vae.safetensors"   "$HF/vae/qwen_image_vae.safetensors"
 
 # 3b) Qwen3-0.6B-Base text encoder as a HF DIR. The Anima loader calls AutoTokenizer.from_pretrained(qwen_path),
 #     which needs tokenizer+config files — a single .safetensors fails. Official base repo = same weights.
-#     Use snapshot_download (stable API) — the huggingface-cli entrypoint varies by version.
+#     snapshot_download is resumable; retry up to 3x for flaky HF connectivity (xet already disabled above).
 pip install -q huggingface_hub
-python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-0.6B-Base', local_dir='$MODELS/Qwen3-0.6B-Base')"
+for i in 1 2 3; do
+  python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-0.6B-Base', local_dir='$MODELS/Qwen3-0.6B-Base')" && break
+  echo "Qwen snapshot attempt $i failed; retrying in 5s..."; sleep 5
+done
+
+# Verify the Qwen safetensors actually landed; fall back to a direct wget if snapshot still missed it.
+if [ ! -s "$MODELS/Qwen3-0.6B-Base/model.safetensors" ]; then
+  echo "snapshot missed model.safetensors -> direct wget fallback"
+  wget -c --tries=10 --retry-connrefused --waitretry=5 -O "$MODELS/Qwen3-0.6B-Base/model.safetensors" \
+    "https://huggingface.co/Qwen/Qwen3-0.6B-Base/resolve/main/model.safetensors"
+fi
 
 echo "Setup done. Models in $MODELS ; diffusion-pipe in $DP_DIR"

@@ -266,59 +266,46 @@ Expected: all three paths listed. If a toml is missing, it was gitignored — re
 
 > Vast Jupyter terminal wraps lines >~95 chars + hangs on heredocs → use these short commands / `git fetch`, never long pastes.
 
-- [ ] **Step 1 (LOCAL): upload the warm-start ckpt to Google Drive, get its file id**
+- [ ] **Step 1 (LOCAL): ensure both inputs are on Google Drive ("anyone with link")**
 
-The file is at:
-`C:\Users\erede\Downloads\ComfyUI_windows_portable_nvidia\ComfyUI_windows_portable\ComfyUI\models\diffusion_models\epoch20.safetensors`
-Upload to Drive, set link to "anyone with the link", copy the id from the share URL.
+- Warm-start ckpt: `...ComfyUI\models\diffusion_models\epoch20.safetensors` → Drive → copy file id.
+- Dataset: `dataset.zip` (flat images + `.txt` sidecars) → Drive → copy file id.
+- Drive IDs are passed as ARGS at runtime, NOT committed (repo is public).
 
 - [ ] **Step 2 (VAST): clone our repo + run base setup**
 
 ```bash
-git clone -b v5-build https://github.com/<owner>/<repo> /workspace/anima/repo
+git clone -b v5-build https://github.com/LamShiuChing/anima-trainer /workspace/anima/repo
 bash /workspace/anima/repo/scripts/vast_setup.sh
 ```
 
 Expected: base DiT + VAE + Qwen3 dir in `/workspace/anima/models`; diffusion-pipe cloned.
 
-- [ ] **Step 3 (VAST): upload the dataset (reuse v5's archive) and extract to data/dataset**
-
-Upload `v5_dataset.tgz` to Drive too, then:
+- [ ] **Step 3 (VAST): fetch dataset zip + warm-start ckpt (one script, IDs as args)**
 
 ```bash
-pip install -q gdown
-gdown <DATASET_FILE_ID> -O /workspace/anima/data/v5_dataset.tgz
-mkdir -p /workspace/anima/data/dataset
-tar -xzf /workspace/anima/data/v5_dataset.tgz -C /workspace/anima/data/dataset
-ls /workspace/anima/data/dataset | wc -l
+bash /workspace/anima/repo/scripts/vast_fetch_v6.sh <DATASET_ZIP_ID> <CKPT_ID>
 ```
 
-Expected: ~3884 files (1942 images + 1942 `.txt`).
+Expected: `ckpt size OK (4182218360)` then `dataset: 3884 files (1942 images + 1942 captions)`. The
+script flattens the zip to `data/dataset/` and hard-fails on a truncated ckpt (gdown virus-scan page) or
+a wrong archive (no `.txt` sidecars).
 
-- [ ] **Step 4 (VAST): download the warm-start ckpt to the exact guarded path**
-
-```bash
-gdown <CKPT_FILE_ID> -O /workspace/anima/models/anima_v5_epoch20.safetensors
-ls -la /workspace/anima/models/anima_v5_epoch20.safetensors
-```
-
-Expected: file size 4182218360 bytes (matches local epoch20).
-
-- [ ] **Step 5 (VAST): launch**
+- [ ] **Step 4 (VAST): launch**
 
 ```bash
 bash /workspace/anima/repo/scripts/run_v6_train.sh
 tail -f /workspace/train_v6.log
 ```
 
-Expected: prints `STARTED v6 pid ...`; log shows latent caching then `epoch: 1` training with loss prints every 100 steps. If it prints `MISSING warm-start ckpt`, Step 4 failed.
+Expected: prints `STARTED v6 pid ...`; log shows latent caching then `epoch: 1` training with loss prints every 100 steps. If it prints `MISSING warm-start ckpt`, Step 3 failed.
 
-- [ ] **Step 6 (VAST): after training, download artifacts BEFORE destroying**
+- [ ] **Step 5 (VAST): after training, download artifacts BEFORE destroying**
 
 - Download `/workspace/train_v6.log` via the Jupyter file browser (for loss-trend analysis).
 - Download every `outputs/anima_realism_ft_v6/<ts>/epoch{1..5}/` DiT checkpoint you want to keep (at minimum the best one).
 
-- [ ] **Step 7 (VAST): destroy the instance** only after the log + chosen checkpoint(s) are confirmed downloaded locally.
+- [ ] **Step 6 (VAST): destroy the instance** only after the log + chosen checkpoint(s) are confirmed downloaded locally.
 
 ---
 

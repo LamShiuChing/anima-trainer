@@ -1,0 +1,56 @@
+# diffusion-pipe — Anima FULL finetune. v7 = 1536 + new dataset + v7 captions.
+# WARM-START from the v6 keeper (proven realism; probe showed v5/v6 @8e-6 was UNDERTRAINED, not LR-limited).
+# lr 8e-6 VALIDATED by the v6 probe (kept climbing to cum-epoch 25+). epochs 40 = ceiling, save-every -> pick best.
+# Spec: docs/superpowers/specs/2026-06-03-anima-realism-v7-captioning-design.md (captions) + v7 training notes in CLAUDE.md
+output_dir = '/workspace/anima/outputs/anima_realism_ft_v7'
+dataset = '/workspace/anima/outputs/anima_realism_ft_v7_dataset_config.toml'
+
+epochs = 40
+micro_batch_size_per_gpu = 1
+pipeline_stages = 1
+gradient_accumulation_steps = 1
+gradient_clipping = 1.0
+steps_per_print = 100
+warmup_steps = 100
+activation_checkpointing = true
+
+# Eval disabled (no eval set). Preview epoch checkpoints in ComfyUI with the frozen eval prompts.
+eval_before_first_step = false
+eval_every_n_epochs = 100000
+
+save_every_n_epochs = 1
+checkpoint_every_n_minutes = 999999
+save_dtype = 'bfloat16'
+
+[model]
+type = 'anima'
+# WARM-START: upload the chosen best v6 epoch here as anima_v6_keeper.safetensors (NOT the base DiT).
+transformer_path = '/workspace/anima/models/anima_v6_keeper.safetensors'
+vae_path = '/workspace/anima/models/qwen_image_vae.safetensors'
+qwen_path = '/workspace/anima/models/Qwen3-0.6B-Base'
+dtype = 'bfloat16'
+llm_adapter_lr = 0
+cache_text_embeddings = false
+shuffle_tags = false          # v7 captions still carry one NL sentence -> shuffling commas would shred it
+tag_delimiter = ', '
+shuffle_keep_first_n = 1
+tag_dropout_percent = 0
+caption_dropout_percent = 0.1
+caption_mode = 'tags'
+timestep_sample_method = 'logit_normal'
+# ⚠️ 1536 VRAM: ~2.25x the pixels of 1024 (v5 used ~50GB @1024) -> 1536 full-FT may exceed 80GB.
+#    If OOM: (1) uncomment qwen_nf4 below, and/or (2) switch [optimizer] to adamw8bit (needs bitsandbytes),
+#    and/or (3) use the 96GB card. Measure peak with `nvidia-smi -l 5` during latent caching.
+# qwen_nf4 = true
+
+# NOTE: no [adapter] block => full finetune (not LoRA).
+
+[optimizer]
+type = 'adamw_optimi'         # validated; switch to adamw8bit only if 1536 OOMs an 80GB card
+lr = 8e-06                    # VALIDATED by the v6 probe (still climbing at cum-epoch 25)
+betas = [0.9, 0.99]
+weight_decay = 0.01
+eps = 1e-8
+
+[monitoring]
+enable_wandb = false

@@ -66,7 +66,13 @@ the best AND the overall look was still improving at 20 (undertrained, NOT overc
 converge in 20 epochs; more epochs and/or higher LR (**reinforces v6**) push overall realism further. **Keeper = epoch
 20** → DOWNLOAD → destroy instance (v3/v4 were lost by never downloading).
 
-## Next — v6 = extend-v5 convergence probe (REFRAMED 2026-06-03; configs DONE, ready to launch)
+## v6 = extend-v5 convergence probe — RESULT: UNDERTRAINING (2026-06-03)
+
+**PROBE RESULT:** continued v5-ep20 @ 8e-6; **cum-epoch 25 much better, still climbing, NOT overcooked.**
+→ **UNDERTRAINING confirmed; lr 8e-6 was fine** (NOT the limiter). The original v5 weakness = too few steps,
+not too-low LR. **No v6b higher-LR escalation needed** (no plateau). User: could go cum-epoch 35–40.
+**Consequence for V7:** lr 8e-6 is now a VALIDATED hyperparameter; the lever is **more epochs + save-every +
+pick best**. V7 warm-starts from the v6 keeper so the epochs go toward 1536/new-captions, not re-learning realism.
 
 **v6 reframed.** User goal = **push overall realism** (not fine detail). The old bundled plan (1536 + min_res
 768 + richer captions + safety-tag, all at once) was CUT — it confounds variables, risks OOM, and forces a
@@ -100,12 +106,9 @@ Spec: `docs/superpowers/specs/2026-06-03-anima-realism-v6-design.md`. Plan (runb
 (gdown)** → `run_v6_train.sh` → `tail -f /workspace/train_v6.log`. **Download `train_v6.log` (loss trend, hand to
 Claude) + best epoch BEFORE destroying.** Then eval v5-ep20 + v6 ep1..5 with the frozen prompt set.
 
-### v6b (deferred — only if probe plateaus, OR a future fine-detail run)
-- Higher LR: fresh-from-base, lr 1.5–2e-5, 18–20 ep, same data/captions. Reuse frozen eval set.
-- Fine-detail bundle (separate experiment): **1536** (⚠️ OOM >80 GB → `qwen_nf4`/H100/measure), **min_res 768**
-  (more data, accept 768→1536 upscale), **richer captions** (`src/gemini_caption.py` `build_prompt` describe
-  bg/objects/accessories; `max_output_tokens` ~256→400), **Gemini-emitted safety tag** (add to schema). **KEEP
-  WD14 underage hard-block — legal, non-negotiable.**
+### v6b higher-LR escalation — NOT triggered
+Probe never plateaued (lr 8e-6 was fine), so the fresh-from-base higher-LR arm is **dropped**. The fine-detail
+bundle it carried (1536, richer captions) is now folded into **V7** (below), done properly.
 
 **Carried-over tradeoff:** v5's `blur≥100` gate biased toward sharp/pro shots → `amateur snapshot` token weakly
 trained. The probe doesn't fix this (same data); a future `min_res 768`/looser-blur run would.
@@ -136,6 +139,20 @@ Goal: richer + more controllable captions (caption == inference prompt). Pairs w
   `docs/superpowers/specs/2026-06-03-anima-realism-v7-captioning-design.md`.
 - ⚠️ Captions change only on the **NEXT dataset rebuild (V7)**; the running v6/v5 model still uses the OLD v5
   caption format (see "## Caption format (v5)" below) — don't prompt the v6 model with V7-only tokens.
+
+### V7 training config (created 2026-06-03)
+- **Dataset prep:** new raw ~6200 → stages 1/3/4 LOCALLY. Floor **1024** (`ingest.min_size`), train res **1536**
+  (`dataset.resolutions=[1536]`; curate `min_resolution` stays 1024 = the floor), blur gate strict (100).
+  `project_name=anima_realism_ft_v7` → stage 4 emits `outputs/anima_realism_ft_v7_dataset_config.toml`.
+  **MUST delete `data/gemini_cache.json`** before stage 3 (old cache = v5 shape → crash). EVA02 downloads first run.
+- **Train:** `outputs/anima_realism_ft_v7_train_config.toml` + `scripts/run_v7_train.sh`. **WARM-START from the v6
+  keeper** (`models/anima_v6_keeper.safetensors` — upload the best v6 epoch), **lr 8e-6 (VALIDATED), epochs 40,
+  save-every, pick best.** Log → `/workspace/train_v7.log`.
+- ⚠️ **1536 VRAM**: ~2.25× the pixels of 1024 (v5 ~50 GB @1024) → 1536 full-FT may exceed 80 GB. OOM fallbacks
+  (in the toml): `[model] qwen_nf4=true` and/or `[optimizer] adamw8bit` (needs bitsandbytes), and/or the 96 GB card.
+  Measure peak with `nvidia-smi -l 5` during latent caching. 40 epochs @1536 = heavy compute — save-every lets you stop early.
+- **Upscaling principle:** diffusion-pipe resizes all to 1536; sources <1536 **upscale = soft** (no new detail),
+  ≥1536 **downscale = crisp**. 1024 floor = mild upscale for 1024–1536; the real detail fuel is ≥1536 originals.
 
 ## Dataset
 

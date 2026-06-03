@@ -1,40 +1,70 @@
-# CLAUDE.md — Anima Realism LoRA project
+# CLAUDE.md — Anima Realism finetune project
 
 > Portable project memory. Lives in the project folder so it survives moving to another drive.
-> Full design lives in `docs/superpowers/specs/2026-05-31-anima-realism-lora-design.md`.
+> Current design: `docs/superpowers/specs/2026-06-02-anima-realism-v5-design.md` (v5).
+> History: `2026-05-31-...lora-design.md` (LoRA, abandoned), `2026-06-01-...v2-design.md` (v2 tag-only).
 
 ## Goal
 
-Train a **realism domain-shift LoRA** for the **Anima** diffusion model (anime base) so it outputs
-realistic photographs. Community realism finetunes of Anima already exist on Civitai, so it works —
-it's a domain shift fought against the anime prior.
+Make the **Anima** diffusion model (anime base; Qwen3-0.6B TE + Qwen-Image VAE) output **realistic photos** —
+a domain shift fought against the anime prior. Community realism finetunes of Anima exist on Civitai, so it works.
 
-- **~~Phase 1: LoRA on local 4080~~ — SUPERSEDED.** See Status below: pivoted to full finetune on Vast.ai.
-- **Current:** full finetune on all uploaded photos via **diffusion-pipe** on a **rented ~48GB cloud GPU (Vast.ai)**.
+- **Current = v5:** full finetune (not LoRA) **from base DiT at 1024**, on a rented **Vast.ai A100-80GB**,
+  via **diffusion-pipe**, on ~1942 Gemini-captioned sharp photos. (LoRA on local 4080 abandoned: 16GB can't fit a
+  full finetune, and the anime→photo shift is too large for LoRA.)
 
-## Status (2026-06-01) — PIVOTED to v2: full finetune on Vast
+## Status (2026-06-02) — v5 TRAINING LIVE on Vast (A100-80GB)
 
-**Major pivot (user decision):** LoRA→**full finetune**, local 4080→**rented cloud GPU (Vast.ai)**,
-JoyCaption NL→**tag-only captions**, drop-filter→**tag-don't-filter**, trigger word→**none**.
-Reason: anime→photoreal is a domain shift LoRA can't fully relocate; full finetune needs ~33GB VRAM
-(won't fit 16GB regardless of speed). **v2 spec:** `docs/superpowers/specs/2026-06-01-anima-realism-finetune-v2-design.md`;
-**plan:** `docs/superpowers/plans/2026-06-01-anima-realism-finetune-v2.md`; **runbook:** `RUNBOOK.md`.
+**Current model = v5.** Pipeline rebuilt + validated end-to-end (subagent-driven, all tests green); training
+running on a rented Vast A100. v2/v3/v4 superseded. Spec: `docs/superpowers/specs/2026-06-02-anima-realism-v5-design.md`;
+plan: `docs/superpowers/plans/2026-06-02-anima-realism-v5.md`. Branch **`v5-build`** (pushed to origin, **NOT merged to master**).
 
-**v2 BUILT + merged to `master`** (plan-driven, 10 tasks, **20 unit tests passing**). Pipeline slimmed
-4-stage: S1 ingest (corrupt-drop + phash dedup only; small/blur/OCR gated off via `ingest.drop_*` flags),
-S2 CLIP aesthetic score (tags all, drops none), S3 NSFW safety tag + quality words → caption `"<quality>, <safety>"`
-(no JoyCaption, no trigger), S4+S5 emit **diffusion-pipe** `dataset.toml` + `anima.toml` (NOT kohya).
-Trainer is now **diffusion-pipe** (`bluvoll/diffusion-pipe`, full-finetune support via tdrussell PR #505),
-launched `deepspeed --num_gpus=1 train.py --deepspeed --config anima.toml`. Old `06_train.ps1` +
-`download_models.ps1` deleted (superseded by `scripts/vast_setup.sh` + `scripts/run_prep.sh` + RUNBOOK).
-Anima loader confirmed: `qwen_path` accepts the single `qwen_3_06b_base.safetensors`; `vae_path` via WanVAE
-class (Qwen-Image VAE is Wan-derived); `llm_adapter_lr=0` freezes the Qwen3 adapter.
+**Why v5 / what changed vs v2-v4 (tag-only captions → blurry, undertrained):**
+- **Train at 1024 from BASE DiT** (`finetune.init_from=""`), 20 epochs, save_every_epoch, lr 8e-6, Qwen3 frozen
+  (`llm_adapter_lr=0`), optimizer `adamw_optimi`. ~50GB VRAM.
+- **Curate by TECHNICAL defects only, not aesthetics:** phash dedup (hamming **8**) + drop `min(w,h)<1024` +
+  drop `blur_var<100` (Laplacian sharpness gate). **Keep all aesthetic buckets** (tagged, not dropped).
+  Design spine: *aesthetic-bad ≠ blurry* — gate on focus/res, tag the rest.
+- **CLIP aesthetic stage (S2) DELETED** — Gemini emits the quality tag.
+- **Captions = WD14 tags + local NSFW safety + Gemini structured output (enum-locked style vocab + NL).**
+  The Qwen3 LLM TE was starved by v2 tag-only captions → mushy/blur; rich NL + controlled style tokens fix it.
 
-**Still NOT run live.** Configs emit + parse correctly (verified). First live run = follow `RUNBOOK.md` on Vast.
-Deferred to first live run: NSFW `id2label` exact strings (→ adjust `caption.nsfw_label_map`); diffusion-pipe
-in-train image eval is OFF (preview epoch checkpoints in ComfyUI); confirm bluvoll fork branch still has Anima.
-**Resolution = 512 for run 1** (diffusion-pipe resizes to target AREA / upscales smaller imgs — no no-upscale flag —
-so 512≈Anima native minimizes upscaling on mixed social data; bump to 768 once a 512 run validates).
+**Curation funnel (this run):** 5949 raw → dedup+`<1024` → 3279 → +`blur≥100` → 1957 → −13 underage(WD14) −2 missing
+→ **1942 captioned @1024**. Dataset = `data/dataset/` (3884 files, 1.63 GB), uploaded to Vast via GDrive+gdown.
+
+**Captioning (LOCAL prep on 4080 + Gemini API; not on the rented GPU):**
+- **Gemini `gemini-2.5-flash-lite`** (cheapest vision, free tier), structured `response_schema` with ENUMS,
+  `safety_settings=BLOCK_NONE` on the 4 adjustable cats. **Enum name is `HARM_CATEGORY_DANGEROUS_CONTENT`** (NOT
+  `_DANGEROUS` — the docs were wrong; this bug caused a 100% silent-blank run). Concurrency 12 (thread pool + exp
+  backoff). Resumable cache `data/gemini_cache.json` (caches successes + legit refusals; **never errors**).
+  Key in `.env` (gitignored, throwaway). Logic in `src/gemini_caption.py`.
+- **Refusal rate observed: safe 3%, explicit 43%** (Gemini declines hardcore → tags-only fallback, accepted).
+  79% full Gemini captions overall.
+- Local models: **WD14 SwinV2_v3** (dghs-imgutils — tags + underage block) + **Falconsai/nsfw_image_detection**
+  (safety tag). **No JoyCaption** (8B too slow on 4080).
+
+**Hard safety boundary (unchanged):** legal adults only. WD14 `block_tags` (loli/shota/child/...) hard-DROP;
+Gemini core child-safety is always-on (non-disableable). 13 blocked this run.
+
+**Live gotchas hit + fixed (read before debugging a re-run):**
+- Global Python + **numpy 2.x** → transformers auto-imports TensorFlow → `_ARRAY_API not found` crash.
+  Fix: `os.environ["USE_TF"]="0"` at top of `src/03_caption.py` (torch-only).
+- Gemini 100% blank: wrong enum raised every call, swallowed by `except`. Added **pre-flight probe** (aborts
+  loudly) + **cache-only-on-success**.
+- **`shuffle_tags`/`tag_dropout` would SHRED the NL sentence** (splits on its commas) → set `shuffle_tags=false`,
+  `tag_dropout_percent=0`. Hybrid tag+NL caption must be used verbatim. (`caption_dropout=0.1` kept = CFG.)
+- Stage 1 doesn't wipe `data/clean` → re-runs accumulate orphans (delete files not in manifest, or wipe before re-run).
+  Stage 4 curate now **requires a caption** (skips uncaptioned/missing rows that else crash the copy).
+- **Vast Jupyter terminal wraps lines >~95 chars + hangs on pasted heredocs.** Use `git fetch` + short scripts
+  (`scripts/run_v5_train.sh`), never long pastes. The two tomls were force-added to `v5-build` so they `curl`/checkout.
+
+**Result so far:** epoch 5 already gives OK photoreal output (right direction). User checking ~epoch 10. Watch for
+overcook (plastic skin) in the back half; **pick best epoch → DOWNLOAD → destroy** (v3/v4 checkpoints were lost by
+never downloading off Vast).
+
+**Known tradeoff to revisit next iteration:** the `blur≥100` gate biased the set toward sharp/professional shots →
+few `amateur snapshot` images → that control token is weakly trained. If amateur/snapshot realism is the goal,
+loosen the blur gate or tune the Gemini rubric.
 
 ## Dataset
 
@@ -73,41 +103,47 @@ so 512≈Anima native minimizes upscaling on mixed social data; bump to 768 once
   with `network_module = networks.lora_anima`.
 - Notebook's `<1000 steps` rule is a **Colab disconnect limit — does NOT apply locally.**
 
-## Caption format
+## Caption format (v5) — enum-locked controlled vocab
 
 ```
-<quality tags>, <safety tag>, realistic photo, <natural-language description>
+realistic photo, <quality_level>, <capture_style>, <lighting..>, <condition..>, <safety>, <wd14 tags>[, watermark], <NL description>
 ```
-e.g. `masterpiece, best quality, safe, realistic photo, a woman on a park bench at golden hour, 35mm`
+e.g. `realistic photo, masterpiece, best quality, amateur snapshot, direct on-camera flash, grainy / high ISO, safe, 1girl, kitchen, a woman leaning on a counter holding a mug`
 
-- Quality tags from aesthetic-score bucket; safety tag from NSFW classifier; `realistic photo` = trigger.
-- **Captioner = JoyCaption** (NSFW-capable, runs on 4080). Florence-2 / Qwen2.5-VL rejected (censored).
+- Anchor `realistic photo` always leads — the inference handle to pull output off the anime prior.
+- **Controlled vocab** (Gemini MUST pick from these enums → consistent = reliable inference triggers):
+  - `quality_level`: `masterpiece, best quality` | `high quality` | `low quality`
+  - `capture_style`: `amateur snapshot` | `casual phone photo` | `semi-professional` | `professional photograph` | `studio portrait`
+  - `lighting` (0–2): `direct on-camera flash` | `natural daylight` | `golden hour` | `overcast flat light` | `indoor artificial light` | `low light` | `soft window light` | `studio lighting`
+  - `condition` (0–2): `sharp focus` | `soft focus` | `grainy / high ISO` | `motion blur` | `compressed / low-res` | `overexposed` | `underexposed`
+- `safety` (safe/explicit) from Falconsai. `watermark` token appended when Gemini flags it → **negative-prompt** at inference. NL = free Gemini text.
+- All defined in `src/gemini_caption.py` (`VOCAB`, `build_schema`, `build_prompt`, `coerce_response`, `assemble_caption`).
 - Captioner ≠ text encoder: Qwen3 TE encodes whatever text is written; no benefit to "matching" captioner to TE.
 
-## Pipeline — 6 local stages (each one script, idempotent, reads prior stage's dir)
+## Pipeline — v5 (prep runs LOCALLY on 4080; Gemini via API; S2 deleted)
 
-1. `src/01_ingest_clean.py` — phash dedup, drop tiny/blurry/corrupt, OCR-flag meme/screenshot text → `data/clean/`
-2. `src/02_quality_score.py` — CLIP aesthetic score → good/medium/bad buckets (this is how mixed quality becomes useful: bad → `low quality` tag, not discarded)
-3. `src/03_caption.py` — JoyCaption NL + NSFW safety tag + quality tag → assembled caption
-4. `src/04_build_dataset.py` — copy curated subset, write `img.txt` sidecars (flat folder), emit dataset TOML
-5. `src/05_make_train_config.py` — emit training TOML
-6. `scripts/06_train.ps1` — setup Standalone-Trainer, download models, `accelerate launch`, fixed-seed sample previews
+1. `src/01_ingest_clean.py` — phash dedup (hamming 8) + drop corrupt/`<1024`/`blur_var<thr`; records width/height/blur_var.
+   Knobs: `ingest.drop_small`+`min_size`, `ingest.drop_blurry`+`blur_var_threshold` (tune from distribution), `phash_hamming_threshold`.
+2. ~~`src/02_quality_score.py`~~ — **DELETED** (CLIP aesthetic; Gemini emits quality now).
+3. `src/03_caption.py` — WD14 tags (+ underage block) + Falconsai safety + Gemini structured enum/NL → caption.
+   Two-pass: serial local tag/safety → **concurrent** Gemini (`caption_many`). Gemini logic in `src/gemini_caption.py`.
+4. `src/04_build_dataset.py` — `curate()` (require caption + 1024 + blur backstop), copy to flat `data/dataset/` +
+   `.txt` sidecars, emit diffusion-pipe `dataset.toml`.
+5. `src/05_make_train_config.py` — emit `anima.toml` (from base, `shuffle_tags=false`, no `[adapter]` = full finetune).
 
-Config: all paths + thresholds in `config/pipeline.yaml`. Two venvs: pipeline (cleaning/captioning) vs trainer (`setup_env.bat`, PyTorch 2.7 cu128).
+**Vast launch:** `scripts/vast_setup.sh` (clone `bluvoll/diffusion-pipe` + download 3 Anima models) → upload `data/dataset`
+→ `scripts/run_v5_train.sh` (copies tomls into place + `nohup deepspeed --num_gpus=1 train.py --deepspeed --config anima.toml`).
+Watch `tail -f /workspace/train.log`; epoch checkpoints in `outputs/anima_realism_ft_v5/<ts>/epoch*/`.
 
-## Key hyperparameters (16GB recipe)
+Config: all paths + thresholds in `config/pipeline.yaml`. Tests: `python -m pytest tests/ -v`
+(exclude `tests/test_01_ingest_clean.py` if `imagehash`/`cv2` not installed in the active env).
 
-- Fit-16GB: `cache_latents=true` + `cache_text_encoder_outputs=true` (precompute+offload VAE/TE) + `gradient_checkpointing` + `bf16` + `AdamW8bit` + batch 1.
-- Start: **dim/alpha 32, res 768, lr 1e-4, repeats 5, epochs 10**. OOM fallback: **dim 8, res 512**.
-- lr 1e-4 = notebook proven default (dim~20); 2e-5 = conservative model-card value.
-- Cached latents pin resolution (no random-crop aug) → re-cache if res changes.
+## Key training hyperparameters (v5, A100-80GB)
 
-## Open items (resolve at build time)
-
-- JoyCaption Windows install (~8–12GB weights; confirm bitsandbytes CUDA wheel on Win).
-- Aesthetic predictor pick (lightest that runs on 4080).
-- NSFW/safety classifier pick (photo-domain).
-- Confirm `networks.lora_anima` present after `setup_env.bat`.
+- 1024 res, from base DiT, 20 epochs, `save_every_n_epochs=1`, lr **8e-6**, `adamw_optimi`, `activation_checkpointing=true`,
+  `llm_adapter_lr=0` (freeze Qwen3), `caption_dropout=0.1`, `tag_dropout=0`, `shuffle_tags=false`. ~50 GB VRAM.
+- OOM fallback: add `[model] qwen_nf4=true`, or drop resolution. (40GB cards OOM at 1024.)
+- diffusion-pipe pre-caches latents (one VAE pass, AR-bucketed) before epoch 1; `cache_text_embeddings=false` (TE frozen).
 
 ## Caveats after folder move
 

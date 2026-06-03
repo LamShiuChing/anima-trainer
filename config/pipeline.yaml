@@ -46,10 +46,10 @@ dataset:
 
 finetune:                        # diffusion-pipe anima.toml (FULL finetune, not LoRA)
   base_dir: /workspace/anima     # Vast working dir (RUNBOOK sets this up)
-  project_name: anima_realism_ft_v5
-  init_from: ""                  # v5: from BASE DiT (no warm-start)
-  epochs: 20
-  lr: 8.0e-6                     # authors' full-finetune rec (8e-6 or lower); low to avoid catastrophic forgetting
+  project_name: anima_realism_ft_v6   # v6: SAME data, harder LR. From base (clean LR comparison vs v5). Launch only after v5 frees the GPU.
+  init_from: ""                  # from BASE DiT (no warm-start) — isolates the LR variable vs v5
+  epochs: 15                     # v6: higher LR peaks sooner; save_every_epoch -> pick best retrospectively
+  lr: 1.5e-5                     # v6: ~2x v5's 8e-6. "slow + weak at 8e-6" = LR too timid for an anime->photo shift. Model card's own value is 2e-5.
   optimizer: adamw_optimi        # proven default; A100-80GB has VRAM to spare (no need for 8-bit)
   warmup_steps: 100
   save_every_n_epochs: 1         # one inference-ready model export per epoch (~4-5GB each)

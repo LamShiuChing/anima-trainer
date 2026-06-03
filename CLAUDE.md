@@ -59,11 +59,12 @@ Gemini core child-safety is always-on (non-disableable). 13 blocked this run.
   (`scripts/run_v5_train.sh`), never long pastes. The two tomls were force-added to `v5-build` so they `curl`/checkout.
 
 **v5 RESULT — trained to epoch 20 (lr 8e-6). SUCCESS as a photoreal base:** overall realism + lighting good,
-close-up faces good. **Weak: small faces (medium/full-body shots), hands/feet, background detail.** Diagnosed
-**resolution-bound** (1024 under-resolves anything small-in-frame) + subject-focused data — NOT undertraining, NOT
-what higher LR fixes. Epochs 15 ≈ 20 (similar). Standard fix for the weak parts = **inference-side detailing**
-(ADetailer/FaceDetailer + HandDetailer + hires-fix upscale) — do this before more training. Pick best epoch (15 fine)
-→ DOWNLOAD → destroy instance (v3/v4 were lost by never downloading).
+close-up faces good. **Weak: small faces (medium/full-body shots), hands/feet, background detail.** The **small-detail** weaknesses
+(faces-in-wide-shots, hands/feet, bg) are **resolution-bound** (1024 under-resolves small-in-frame) + subject-focused
+data → fix at **INFERENCE** (ADetailer/FaceDetailer + HandDetailer + hires-fix), NOT by more epochs. **BUT epoch 20 is
+the best AND the overall look was still improving at 20 (undertrained, NOT overcooked)** → lr 8e-6 was too gentle to
+converge in 20 epochs; more epochs and/or higher LR (**reinforces v6**) push overall realism further. **Keeper = epoch
+20** → DOWNLOAD → destroy instance (v3/v4 were lost by never downloading).
 
 ## Next — v6 plan (user decisions 2026-06-03; execute next session)
 
@@ -72,8 +73,10 @@ Goal: push **fine detail** (background, hands, phones/objects) + test whether a 
   (`[model] qwen_nf4=true`, an H100, or check actual usage).
 - **Dataset `min_resolution: 768`** (down from v5's 1024) — keep MORE images; user accepts diffusion-pipe upscaling
   768→1536 (soft-upscale trade-off, for more data/detail/variety). Keep the blur sharpness gate.
-- **lr higher** (pre-staged 1.5e-5; "higher LR" per user — confirm 1.5–2e-5), **epochs 15**. From base for a clean test;
-  consider warm-start from v5-epoch15 to save 1536 compute (decide next session).
+- **lr higher** (pre-staged 1.5e-5; "higher LR" per user — confirm 1.5–2e-5), **epochs 18–20** (v5 was still climbing at
+  20 → don't cap low; save-every-epoch + pick best). From base for a clean test; consider warm-start from **v5-epoch20**
+  to save 1536 compute (decide next session). NOTE: v5 still improving at 20 also means a cheap alternative to v6 =
+  just **extend v5** (warm-start ep20, +N epochs at 8e-6) — but v6's higher LR converges faster + tests the hypothesis.
 - **Captions more detailed** — edit the Gemini prompt (`src/gemini_caption.py` `build_prompt`) to describe background,
   objects, accessories (phones etc.), finer detail; bump `max_output_tokens` (~256→400).
 - **NSFW handling per user:** send ALL images to Gemini, **no pre-routing** (already true in v5) — let the API response

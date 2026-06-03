@@ -82,9 +82,16 @@ assumption. Dataset ruled out for overall realism (v5 makes good realism). So ch
 - v5 checkpoints saved locally (single-file DiT, 4.18 GB) in ComfyUI `models/diffusion_models/`:
   `epoch10/12/15/20.safetensors` + base `anima_baseV10.safetensors`. **epoch20 = warm-start source.**
 
-**DONE on `v5-build` (commit 63f4ab7, pushed):** `outputs/anima_realism_ft_v6_train_config.toml` (transformer_path
-→ `anima_v5_epoch20.safetensors`, lr 8e-6, epochs 5), `scripts/run_v6_train.sh` (warm-start guard, log →
-`/workspace/train_v6.log`), frozen eval set `docs/superpowers/specs/2026-06-03-v6-eval-prompts.md`.
+**VRAM — runs on 40 GB A100 (only card available):** v5 used ~50 GB at 1024 (80 GB card); 40 GB OOMs at 1024
+with fp32 adamw. Fix WITHOUT touching res/LR/data/weights: **optimizer → `adamw8bit`** (bitsandbytes, ~−12 GB →
+~38 GB peak). `run_v6_train.sh` pip-installs bitsandbytes. This 8-bit optimizer is the ONLY deviation from v5
+besides warm-start (minor — optimizer state is fresh on warm-start anyway; tiebreaker = clean 80 GB fp32 re-run).
+OOM fallback if still tight: `[model] qwen_nf4=true` or an 80 GB card. (Kahan variant rejected: ~−8 GB, risks OOM.)
+
+**DONE on `v5-build` (pushed):** `outputs/anima_realism_ft_v6_train_config.toml` (transformer_path
+→ `anima_v5_epoch20.safetensors`, lr 8e-6, epochs 5, optimizer `adamw8bit`), `scripts/run_v6_train.sh` (warm-start
++ bitsandbytes guards, log → `/workspace/train_v6.log`), `scripts/vast_fetch_v6.sh` (gdown dataset.zip + ckpt, IDs
+as args, size/count checks), frozen eval set `docs/superpowers/specs/2026-06-03-v6-eval-prompts.md`.
 Spec: `docs/superpowers/specs/2026-06-03-anima-realism-v6-design.md`. Plan (runbook): `docs/superpowers/plans/2026-06-03-anima-realism-v6.md`.
 
 **To launch (fresh A100, Vast runbook = plan Task 6):** `git clone -b v5-build .../LamShiuChing/anima-trainer repo`

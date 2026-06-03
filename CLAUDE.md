@@ -58,13 +58,33 @@ Gemini core child-safety is always-on (non-disableable). 13 blocked this run.
 - **Vast Jupyter terminal wraps lines >~95 chars + hangs on pasted heredocs.** Use `git fetch` + short scripts
   (`scripts/run_v5_train.sh`), never long pastes. The two tomls were force-added to `v5-build` so they `curl`/checkout.
 
-**Result so far:** epoch 5 already gives OK photoreal output (right direction). User checking ~epoch 10. Watch for
-overcook (plastic skin) in the back half; **pick best epoch → DOWNLOAD → destroy** (v3/v4 checkpoints were lost by
-never downloading off Vast).
+**v5 RESULT — trained to epoch 20 (lr 8e-6). SUCCESS as a photoreal base:** overall realism + lighting good,
+close-up faces good. **Weak: small faces (medium/full-body shots), hands/feet, background detail.** Diagnosed
+**resolution-bound** (1024 under-resolves anything small-in-frame) + subject-focused data — NOT undertraining, NOT
+what higher LR fixes. Epochs 15 ≈ 20 (similar). Standard fix for the weak parts = **inference-side detailing**
+(ADetailer/FaceDetailer + HandDetailer + hires-fix upscale) — do this before more training. Pick best epoch (15 fine)
+→ DOWNLOAD → destroy instance (v3/v4 were lost by never downloading).
 
-**Known tradeoff to revisit next iteration:** the `blur≥100` gate biased the set toward sharp/professional shots →
-few `amateur snapshot` images → that control token is weakly trained. If amateur/snapshot realism is the goal,
-loosen the blur gate or tune the Gemini rubric.
+## Next — v6 plan (user decisions 2026-06-03; execute next session)
+
+Goal: push **fine detail** (background, hands, phones/objects) + test whether a higher LR strengthens the look.
+- **Train res 1536** (up from 1024). ⚠️ **VRAM**: 1536 full-finetune likely >80 GB → may OOM on A100-80GB; resolve first
+  (`[model] qwen_nf4=true`, an H100, or check actual usage).
+- **Dataset `min_resolution: 768`** (down from v5's 1024) — keep MORE images; user accepts diffusion-pipe upscaling
+  768→1536 (soft-upscale trade-off, for more data/detail/variety). Keep the blur sharpness gate.
+- **lr higher** (pre-staged 1.5e-5; "higher LR" per user — confirm 1.5–2e-5), **epochs 15**. From base for a clean test;
+  consider warm-start from v5-epoch15 to save 1536 compute (decide next session).
+- **Captions more detailed** — edit the Gemini prompt (`src/gemini_caption.py` `build_prompt`) to describe background,
+  objects, accessories (phones etc.), finer detail; bump `max_output_tokens` (~256→400).
+- **NSFW handling per user:** send ALL images to Gemini, **no pre-routing** (already true in v5) — let the API response
+  decide what it captions (BLOCK_NONE + tags-only fallback, already true). NEW: let **Gemini emit the safety tag** (add
+  to schema) instead of pre-determining. **KEEP the WD14 underage hard-block — legal boundary, non-negotiable.**
+- A pre-staged v6 (`anima_realism_ft_v6_*` tomls + `scripts/run_v6_train.sh`; lr 1.5e-5 / 15ep / 1024 / from-base) is on
+  `v5-build` — **update it to 1536 + min_res 768 + richer caption prompt + Gemini-safety-tag** before launching.
+
+**Carried-over tradeoff:** v5's `blur≥100` gate biased toward sharp/professional shots → few `amateur snapshot` images →
+that control token is weakly trained. v6's `min_res 768` (more data) partly helps; loosen blur or tune rubric if amateur
+realism is wanted.
 
 ## Dataset
 

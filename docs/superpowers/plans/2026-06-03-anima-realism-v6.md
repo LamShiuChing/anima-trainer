@@ -80,17 +80,16 @@ transformer_path = '/workspace/anima/models/anima_v5_epoch20.safetensors'
 lr = 8e-06
 ```
 
-- [ ] **Step 5b: Switch optimizer to 8-bit for the 40 GB A100** (added after VRAM check — 40 GB OOMs at 1024 with fp32 adamw)
+- [ ] **Step 5b: Optimizer stays fp32 `adamw_optimi`** (hardware = RTX 6000 Pro 96 GB; ~50 GB used, no 8-bit needed)
 
-In `[optimizer]`, change `type = 'adamw_optimi'` to:
+No value change — keep v5's `type = 'adamw_optimi'` (byte-clean probe, no optimizer confound). Only a
+trailing comment + a VRAM header line note the 96 GB card. `run_v6_train.sh` does NOT install bitsandbytes.
 
-```toml
-type = 'adamw8bit'   # bitsandbytes AdamW8bit -> ~-12GB, fits 40GB A100 (v5 used adamw_optimi on 80GB)
-```
+**Blackwell caveat:** before launch, confirm the instance torch sees the GPU:
+`python -c "import torch; print(torch.cuda.get_device_name(0))"` → must print the RTX 6000 Pro. If it errors
+(old wheels lacking sm_120 kernels), upgrade torch/CUDA in the instance.
 
-Keep `lr/betas/weight_decay/eps` unchanged. Also add two header lines noting the VRAM deviation (see the committed file). `run_v6_train.sh` installs `bitsandbytes` if missing.
-
-- [ ] **Step 6: Confirm the rest of the file is identical to v5 (diff should show ONLY header, output_dir, dataset, transformer_path, epochs, and optimizer type)**
+- [ ] **Step 6: Confirm the rest of the file is identical to v5 (diff should show ONLY header, output_dir, dataset, transformer_path, epochs)**
 
 Run:
 
@@ -100,7 +99,8 @@ diff outputs/anima_realism_ft_v5_train_config.toml outputs/anima_realism_ft_v6_t
 ```
 
 Expected differing lines: header comments, `output_dir`, `dataset`, `epochs` (20→5), `transformer_path`
-(base→ep20), and `[optimizer] type` (adamw_optimi→adamw8bit). `lr` must NOT appear (both 8e-06).
+(base→ep20). The `[optimizer] type` line shows a **comment-only** diff (value `adamw_optimi` identical).
+`lr` must NOT appear (both 8e-06).
 
 Expected: differing lines are only the header comment, `output_dir` (v5→v6), `dataset` (v5→v6), `epochs` (20→5), and `transformer_path` (base→epoch20). `lr` must NOT appear in the diff (both 8e-06). If `lr` appears, Step 3 failed.
 

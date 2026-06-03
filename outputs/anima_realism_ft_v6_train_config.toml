@@ -1,7 +1,6 @@
 # diffusion-pipe — Anima FULL finetune (realism domain shift). v6 = extend-v5 probe.
 # WARM-START from v5 epoch20 @ SAME lr 8e-6 for +5 epochs (cum ~25). One variable = more steps.
-# VRAM: runs on a 40GB A100 via 8-bit optimizer (adamw8bit, ~-12GB vs v5's fp32 adamw_optimi).
-#       Only deviation from v5 besides warm-start; optimizer state is fresh either way (minor confound).
+# VRAM: RTX 6000 Pro 96GB (~50GB used) -> fp32 adamw_optimi, BYTE-IDENTICAL to v5 (no 8-bit confound).
 # Spec: docs/superpowers/specs/2026-06-03-anima-realism-v6-design.md
 output_dir = '/workspace/anima/outputs/anima_realism_ft_v6'
 dataset = '/workspace/anima/outputs/anima_realism_ft_v6_dataset_config.toml'
@@ -42,7 +41,7 @@ timestep_sample_method = 'logit_normal'
 # NOTE: no [adapter] block => full finetune (not LoRA).
 
 [optimizer]
-type = 'adamw8bit'   # bitsandbytes AdamW8bit -> ~-12GB, fits 40GB A100 (v5 used adamw_optimi on 80GB)
+type = 'adamw_optimi'   # fp32, byte-identical to v5 (96GB RTX 6000 Pro has headroom; no 8-bit needed)
 lr = 8e-06
 betas = [0.9, 0.99]
 weight_decay = 0.01

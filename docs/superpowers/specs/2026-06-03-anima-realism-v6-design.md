@@ -35,10 +35,9 @@ starting weights.** Changing exactly one thing (more steps) makes the result int
 - **Warm-start:** `transformer_path` → v5 `epoch20.safetensors` (instead of base DiT).
 - **lr:** `8e-6` (same as v5 — this is the whole point).
 - **epochs:** `5` (continuation; cumulative exposure ≈ 25 epochs). Fast cheap peek; extend if still climbing.
-- **Everything else byte-identical to v5:** 1024 res, micro_batch 1 / grad_accum 1,
+- **Everything else byte-identical to v5:** 1024 res, micro_batch 1 / grad_accum 1, `adamw_optimi` (fp32),
   betas [0.9, 0.99], weight_decay 0.01, warmup_steps 100, save_every_n_epochs 1, Qwen3 frozen
   (`llm_adapter_lr=0`), `caption_dropout_percent=0.1`, `shuffle_tags=false`, `tag_dropout_percent=0`.
-- **Optimizer: `adamw8bit` (bitsandbytes), NOT v5's `adamw_optimi`** — forced by hardware (see VRAM below).
 - **Dataset + captions:** unchanged from v5 (same 1942-image dataset, same `.txt` captions). Identical
   content = clean test.
 
@@ -47,16 +46,17 @@ diffusion-pipe loads **weights only**, not Adam optimizer moments → the first 
 moments (a fresh optimizer on adapted weights). `warmup_steps=100` already covers this. Expect a
 possible **small epoch-1 dip** that recovers — judge the trend, not epoch 1 in isolation.
 
-### VRAM — runs on a 40 GB A100 (8-bit optimizer)
-v5 used ~50 GB at 1024 (80 GB card); `CLAUDE.md` notes 40 GB OOMs at 1024. To fit the only-available
-40 GB A100 without touching res/LR/data/weights, the **optimizer states go 8-bit**: `type = 'adamw8bit'`
-(bitsandbytes), ~−12 GB vs v5's fp32 `adamw_optimi` → ~38 GB peak. Needs `bitsandbytes` (installed by
-`run_v6_train.sh` guard). Kahan variant (`adamw8bitkahan`) rejected: only ~−8 GB → ~42 GB, risks OOM on 40 GB.
+### VRAM — RTX 6000 Pro 96 GB (fp32 optimizer, byte-clean)
+Run on the **RTX 6000 Pro (Blackwell, 96 GB)**. v5 used ~50 GB at 1024 → ample headroom, so keep v5's
+**fp32 `adamw_optimi`** — the probe is byte-identical to v5 (no 8-bit optimizer confound). No bitsandbytes.
 
-**Confound note:** 8-bit optimizer is the *one* deviation from v5 besides warm-start. It is minor —
-the optimizer state is fresh on a warm-start anyway, and 8-bit AdamW tracks fp32 closely for finetuning.
-If the probe gives an ambiguous plateau, a clean 80 GB re-run (fp32 `adamw_optimi`) is the tiebreaker.
-**OOM fallback if 40 GB is still tight:** add `[model] qwen_nf4=true`, or move to an 80 GB card.
+**Blackwell (sm_120) compat caveat:** the instance image must ship a recent CUDA (≈12.8+) + torch (≈2.7+);
+older wheels lack Blackwell kernels and crash at first CUDA op. Verify the Vast image's torch sees the GPU
+(`python -c "import torch; print(torch.cuda.get_device_name(0))"`) before launching. If diffusion-pipe's
+pinned deps are too old for Blackwell, upgrade torch in the instance.
+
+(History: an interim plan targeted a 40 GB A100 via `adamw8bit`; the 96 GB card makes that unnecessary.
+96 GB also makes a future **1536 fine-detail v6b** fit on one card without nf4/offload.)
 
 ### Decision rule (reads the curve)
 
@@ -72,7 +72,7 @@ Diff vs the currently pre-staged v6 toml (which is lr 1.5e-5 / 15ep / from-base)
 - `transformer_path = '/workspace/anima/models/anima_v5_epoch20.safetensors'`  *(was base DiT)*
 - `lr = 8e-06`  *(was 1.5e-05)*
 - `epochs = 5`  *(was 15)*
-- `[optimizer] type = 'adamw8bit'`  *(was `adamw_optimi` — 40 GB fit, see VRAM)*
+- `[optimizer] type`: **unchanged** — `adamw_optimi` (fp32), same as v5 (96 GB card, no 8-bit needed).
 - `output_dir = '/workspace/anima/outputs/anima_realism_ft_v6'`  *(unchanged)*
 - all other keys unchanged (already match v5).
 

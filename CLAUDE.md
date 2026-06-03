@@ -82,15 +82,16 @@ assumption. Dataset ruled out for overall realism (v5 makes good realism). So ch
 - v5 checkpoints saved locally (single-file DiT, 4.18 GB) in ComfyUI `models/diffusion_models/`:
   `epoch10/12/15/20.safetensors` + base `anima_baseV10.safetensors`. **epoch20 = warm-start source.**
 
-**VRAM — runs on 40 GB A100 (only card available):** v5 used ~50 GB at 1024 (80 GB card); 40 GB OOMs at 1024
-with fp32 adamw. Fix WITHOUT touching res/LR/data/weights: **optimizer → `adamw8bit`** (bitsandbytes, ~−12 GB →
-~38 GB peak). `run_v6_train.sh` pip-installs bitsandbytes. This 8-bit optimizer is the ONLY deviation from v5
-besides warm-start (minor — optimizer state is fresh on warm-start anyway; tiebreaker = clean 80 GB fp32 re-run).
-OOM fallback if still tight: `[model] qwen_nf4=true` or an 80 GB card. (Kahan variant rejected: ~−8 GB, risks OOM.)
+**VRAM — RTX 6000 Pro 96 GB (Blackwell):** v5 used ~50 GB at 1024 → ample headroom, so keep v5's fp32
+`adamw_optimi` → probe is BYTE-IDENTICAL to v5 (no 8-bit confound). No bitsandbytes. ⚠️ **Blackwell sm_120**
+needs recent CUDA (~12.8+) + torch (~2.7+) — verify the Vast image sees the GPU
+(`python -c "import torch; print(torch.cuda.get_device_name(0))"`) before launch; upgrade torch if old.
+96 GB also makes a future **1536 v6b** fit on one card (no nf4/offload). (History: an interim 40 GB plan used
+`adamw8bit`; reverted when the 96 GB card appeared.)
 
 **DONE on `v5-build` (pushed):** `outputs/anima_realism_ft_v6_train_config.toml` (transformer_path
-→ `anima_v5_epoch20.safetensors`, lr 8e-6, epochs 5, optimizer `adamw8bit`), `scripts/run_v6_train.sh` (warm-start
-+ bitsandbytes guards, log → `/workspace/train_v6.log`), `scripts/vast_fetch_v6.sh` (gdown dataset.zip + ckpt, IDs
+→ `anima_v5_epoch20.safetensors`, lr 8e-6, epochs 5, optimizer `adamw_optimi` = v5), `scripts/run_v6_train.sh`
+(warm-start guard, log → `/workspace/train_v6.log`), `scripts/vast_fetch_v6.sh` (gdown dataset.zip + ckpt, IDs
 as args, size/count checks), frozen eval set `docs/superpowers/specs/2026-06-03-v6-eval-prompts.md`.
 Spec: `docs/superpowers/specs/2026-06-03-anima-realism-v6-design.md`. Plan (runbook): `docs/superpowers/plans/2026-06-03-anima-realism-v6.md`.
 

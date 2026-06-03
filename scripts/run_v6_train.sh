@@ -15,7 +15,6 @@ echo "dataset files: $(ls "$BASE/data/dataset" | wc -l)"
 
 cd "$BASE/diffusion-pipe"
 which deepspeed >/dev/null 2>&1 || pip install -q deepspeed
-python -c "import bitsandbytes" >/dev/null 2>&1 || pip install -q bitsandbytes   # adamw8bit (40GB fit)
 nohup deepspeed --num_gpus=1 train.py --deepspeed \
   --config "$BASE/outputs/anima_realism_ft_v6_train_config.toml" \
   > /workspace/train_v6.log 2>&1 &

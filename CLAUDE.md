@@ -129,8 +129,13 @@ Goal: richer + more controllable captions (caption == inference prompt). Pairs w
 - 🚫 **WD14 underage hard-block KEPT — non-negotiable.** User states dataset is all-adult; the block is then a
   **no-op** (drops nothing) and exists purely as a backstop against a single mislabeled/slipped file. Zero cost to
   keep, catastrophic+illegal risk if removed. Not a quality setting.
-- Code: `src/gemini_caption.py` (`VOCAB`, `build_schema`, `build_prompt`, `coerce_response`, `assemble_caption`),
-  WD14 in `src/03_caption.py`. Full vocab table in chat 2026-06-03 → fold into a V7 caption spec before building.
+- **IMPLEMENTED on `v5-build`** (2026-06-03): `src/gemini_caption.py` rewritten (new `VOCAB` 18 slots,
+  `SINGLE_SLOTS`/`ARRAY_SLOTS`, `resolution_tag`, anchor removed, rating+fallback), `src/03_caption.py` wired
+  (derived resolution + Falconsai fallback rating), `config/pipeline.yaml` caption→v7 (EVA02_Large @0.25,
+  max_output_tokens 450, nsfw map→rating). Tests green (40 passed). Spec + full vocab + **user prompt guide**:
+  `docs/superpowers/specs/2026-06-03-anima-realism-v7-captioning-design.md`.
+- ⚠️ Captions change only on the **NEXT dataset rebuild (V7)**; the running v6/v5 model still uses the OLD v5
+  caption format (see "## Caption format (v5)" below) — don't prompt the v6 model with V7-only tokens.
 
 ## Dataset
 

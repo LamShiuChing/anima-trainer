@@ -1,9 +1,11 @@
-"""Stage 3 (v5): WD14 tags + local safety tag + Gemini structured style/NL -> assembled caption.
+"""Stage 3 (v7): WD14 tags + Gemini structured enum vocab + rich NL -> assembled caption.
 
 Per survivor: WD14 booru tags (also the adults-only underage hard-block, on comma tokens),
-local NSFW safety tag (Falconsai), and one Gemini call for the enum-locked style vocab + NL.
-Caption assembly + Gemini live in gemini_caption.py. Rows whose file no longer exists are
-skipped (enables manual spot-review by deleting files from data/clean before this stage).
+a Falconsai rating used as a FALLBACK, and one Gemini call for the expanded enum vocab + rating +
+rich NL. Gemini emits the booru rating; Falconsai fills it only when Gemini returns nothing.
+Resolution token is derived locally from each row's width/height (not Gemini). Caption assembly +
+Gemini live in gemini_caption.py. Rows whose file no longer exists are skipped (enables manual
+spot-review by deleting files from data/clean before this stage).
 """
 import os
 os.environ.setdefault("USE_TF", "0")    # torch-only: stop transformers importing TensorFlow (breaks under numpy 2.x)
@@ -84,7 +86,7 @@ def main():
     cap_cfg = cfg["caption"]
     rows = common.read_manifest(cfg["paths"]["manifest"])
     kept = [r for r in rows if r.get("dropped") == "False"]
-    LOG.info("Stage 3 (v5): captioning up to %d images (WD14 + safety + Gemini)", len(kept))
+    LOG.info("Stage 3 (v7): captioning up to %d images (WD14 EVA02 + Gemini enum/rating/NL)", len(kept))
 
     block_terms = {t.strip().lower() for t in cap_cfg.get("block_tags", [])}
     nsfw = NSFWTagger(cfg)
@@ -94,8 +96,8 @@ def main():
 
     updates, blocked, skipped = {}, 0, 0
 
-    # Pass 1 (serial, local GPU): WD14 tags + underage hard-block + NSFW safety tag.
-    worklist = []   # (row, tags, safety) for survivors
+    # Pass 1 (serial, local GPU): WD14 tags + underage hard-block + Falconsai rating (fallback).
+    worklist = []   # (row, tags, rating) for survivors
     for r in tqdm(kept, desc="tag+safety", unit="img", dynamic_ncols=True):
         if not Path(r["path"]).exists():           # spot-review: file culled -> skip
             skipped += 1
@@ -111,27 +113,34 @@ def main():
     # Pre-flight: one real Gemini call so a systematic error (auth/SDK/config) aborts LOUDLY here,
     # before the concurrent pass silently falls back to tags-only for every image.
     if worklist:
-        r0, tags0, safety0 = worklist[0]
+        r0, tags0, rating0 = worklist[0]
         try:
             raw0 = gem._default_generate(r0["path"], tags0)
         except Exception as e:
             raise RuntimeError(f"Gemini pre-flight call failed: {e!r}. Fix before the full run "
                                f"(no captions were written).") from e
         LOG.info("Gemini pre-flight OK. Sample caption:\n  %s",
-                 gcap.assemble_caption(gcap.coerce_response(raw0), safety0, tags0)[:250])
+                 gcap.assemble_caption(gcap.coerce_response(raw0), tags0,
+                                       resolution=gcap.resolution_tag(r0.get("width"), r0.get("height")),
+                                       fallback_rating=rating0)[:250])
 
     # Pass 2 (concurrent): one Gemini call per survivor, thread-pooled (size = caption.gemini.concurrency).
-    tags_by_path = {r["path"]: tags for (r, tags, _s) in worklist}
-    safety_by_path = {r["path"]: safety for (r, _t, safety) in worklist}
+    tags_by_path = {r["path"]: tags for (r, tags, _x) in worklist}
+    rating_by_path = {r["path"]: rating for (r, _t, rating) in worklist}      # Falconsai fallback rating
+    res_by_path = {r["path"]: gcap.resolution_tag(r.get("width"), r.get("height"))
+                   for (r, _t, _x) in worklist}                                # derived from pixel size
     gemini_ok = [0]
     bar = tqdm(total=len(worklist), desc="gemini", unit="img", dynamic_ncols=True)
 
     def on_result(path, parts):
         bar.update(1)
-        if parts["quality_level"]:
+        if parts["quality"]:
             gemini_ok[0] += 1
-        caption = gcap.assemble_caption(parts, safety_by_path[path], tags_by_path[path])
-        updates[path] = {"safety_tag": safety_by_path[path], "quality_tag": parts["quality_level"], "caption": caption}
+        caption = gcap.assemble_caption(parts, tags_by_path[path],
+                                        resolution=res_by_path[path],
+                                        fallback_rating=rating_by_path[path])
+        updates[path] = {"rating_tag": parts.get("rating") or rating_by_path[path],
+                         "quality_tag": parts["quality"], "caption": caption}
 
     try:
         gem.caption_many([(r["path"], tags) for (r, tags, _s) in worklist], on_result=on_result)

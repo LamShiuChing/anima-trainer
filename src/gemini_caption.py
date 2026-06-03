@@ -1,7 +1,13 @@
-"""v5 Gemini captioner: enum-locked style vocab + NL description, BLOCK_NONE, tags-only fallback.
+"""v7 Gemini captioner: expanded enum-locked controlled vocab + rich NL, BLOCK_NONE, tags-only fallback.
 
-Caption format (anchor prepended here, NOT by Gemini):
-  realistic photo, <quality>, <capture_style>, <lighting...>, <condition...>, <safety>, <wd14 tags>[, watermark][, <nl>]
+No 'realistic photo' anchor (v7: 100% photo data -> a token on every image carries no signal).
+Caption assembled locally from: enum slots (Gemini) + resolution (derived from pixel size) + booru
+rating (Gemini, Falconsai fallback) + WD14 tags + watermark flag + rich NL.
+
+Assembled order:
+  <shot_type>, <view>, <camera_angle>, <quality>, <resolution>, <capture_style>, <lighting..>,
+  <condition..>, <color_grade>, <camera_lens>, <depth_of_field>, <expression>, <body_type>,
+  <breast_size>, <ethnicity>, <skin_tone>, <setting_type>, <rating>, <wd14 tags>[, watermark], <nl>
 """
 import json
 import re
@@ -9,18 +15,57 @@ import threading
 import time
 from pathlib import Path
 
-ANCHOR = "realistic photo"
-
 VOCAB = {
-    "quality_level": ["masterpiece, best quality", "high quality", "low quality"],
-    "capture_style": ["amateur snapshot", "casual phone photo", "semi-professional",
-                      "professional photograph", "studio portrait"],
-    "lighting": ["direct on-camera flash", "natural daylight", "golden hour",
+    "shot_type": ["extreme close-up", "close-up", "portrait", "upper body", "cowboy shot",
+                  "full body", "wide shot"],
+    "view": ["front view", "three-quarter view", "profile view", "back view",
+             "looking over shoulder", "looking at viewer", "looking away"],
+    "camera_angle": ["eye level", "from above", "from below", "overhead", "dutch angle"],
+    "quality": ["masterpiece", "best quality", "high quality", "normal quality",
+                "low quality", "worst quality"],
+    "capture_style": ["amateur snapshot", "casual phone photo", "social media selfie",
+                      "candid photo", "semi-professional", "professional photograph",
+                      "editorial photography", "studio portrait"],
+    "lighting": ["direct flash", "natural daylight", "golden hour", "blue hour",
                  "overcast flat light", "indoor artificial light", "low light",
-                 "soft window light", "studio lighting"],
+                 "soft window light", "studio lighting", "backlit", "rim light",
+                 "neon lighting", "harsh sunlight", "ring light", "candlelight"],
     "condition": ["sharp focus", "soft focus", "grainy / high ISO", "motion blur",
-                  "compressed / low-res", "overexposed", "underexposed"],
+                  "compressed / low-res", "overexposed", "underexposed", "lens flare",
+                  "chromatic aberration", "vignette", "jpeg artifacts", "red-eye"],
+    "color_grade": ["natural color", "warm tones", "cool tones", "muted", "vibrant",
+                    "high contrast", "film grain", "film look", "black and white",
+                    "sepia", "faded", "teal and orange"],
+    "camera_lens": ["phone camera", "compact camera", "DSLR", "85mm bokeh", "50mm",
+                    "35mm", "wide-angle", "fisheye", "macro", "film camera"],
+    "depth_of_field": ["shallow depth of field", "deep focus"],
+    "expression": ["neutral expression", "smile", "laughing", "serious", "seductive",
+                   "surprised", "crying", "pout", "open mouth"],
+    "body_type": ["slim", "average build", "athletic", "curvy", "plus-size", "muscular", "petite"],
+    "breast_size": ["flat chest", "small breasts", "medium breasts", "large breasts", "huge breasts"],
+    "ethnicity": ["east asian", "southeast asian", "south asian", "white", "black",
+                  "hispanic", "middle eastern", "mixed"],
+    "skin_tone": ["fair skin", "light skin", "olive skin", "tan skin", "brown skin", "dark skin"],
+    "setting_type": ["bedroom", "living room", "kitchen", "bathroom", "studio", "office",
+                     "city street", "nature", "beach", "pool", "cafe", "restaurant", "bar",
+                     "gym", "car", "party"],
+    "rating": ["rating:general", "rating:sensitive", "rating:questionable", "rating:explicit"],
 }
+
+# single-pick string enums (Gemini returns one; coerce drops out-of-vocab -> "")
+SINGLE_SLOTS = ("shot_type", "view", "camera_angle", "quality", "capture_style",
+                "color_grade", "camera_lens", "depth_of_field", "expression",
+                "body_type", "breast_size", "ethnicity", "skin_tone", "setting_type", "rating")
+# multi-pick array enums (kept up to ARRAY_MAX)
+ARRAY_SLOTS = ("lighting", "condition")
+ARRAY_MAX = 2
+# Gemini must always emit these
+REQUIRED = ["shot_type", "quality", "capture_style", "rating", "has_watermark", "description"]
+# caption assembly order. "_resolution"/"_rating" are handled specially in assemble_caption.
+_ORDER = ("shot_type", "view", "camera_angle", "quality", "_resolution", "capture_style",
+          "lighting", "condition", "color_grade", "camera_lens", "depth_of_field",
+          "expression", "body_type", "breast_size", "ethnicity", "skin_tone",
+          "setting_type", "_rating")
 
 
 def clean_nl(text):
@@ -37,61 +82,79 @@ def mime_for(path):
     return _MIME.get(Path(path).suffix.lower(), "image/jpeg")
 
 
+def resolution_tag(width, height):
+    """Booru-style resolution token from pixel size (derived locally, NOT from Gemini).
+    absurdres >= 2048 short side; highres >= 1024; '' below (v7 keeps down to 768)."""
+    try:
+        short = min(int(width), int(height))
+    except (TypeError, ValueError):
+        return ""
+    if short >= 2048:
+        return "absurdres"
+    if short >= 1024:
+        return "highres"
+    return ""
+
+
 def build_schema(vocab=VOCAB):
-    return {
-        "type": "object",
-        "properties": {
-            "quality_level": {"type": "string", "enum": vocab["quality_level"]},
-            "capture_style": {"type": "string", "enum": vocab["capture_style"]},
-            "lighting": {"type": "array", "items": {"type": "string", "enum": vocab["lighting"]}},
-            "condition": {"type": "array", "items": {"type": "string", "enum": vocab["condition"]}},
-            "has_watermark": {"type": "boolean"},
-            "description": {"type": "string"},
-        },
-        "required": ["quality_level", "capture_style", "has_watermark", "description"],
-    }
+    props = {}
+    for k in SINGLE_SLOTS:
+        props[k] = {"type": "string", "enum": vocab[k]}
+    for k in ARRAY_SLOTS:
+        props[k] = {"type": "array", "items": {"type": "string", "enum": vocab[k]}}
+    props["has_watermark"] = {"type": "boolean"}
+    props["description"] = {"type": "string"}
+    return {"type": "object", "properties": props, "required": list(REQUIRED)}
 
 
 def build_prompt(wd14_tags):
     return (
-        "You are labeling a photo to train an image model. Return JSON only, matching the schema. "
-        "Write 'description' as one factual sentence covering subject, appearance, clothing or lack "
-        "of it, pose, expression, setting, lighting, and camera framing. Do NOT mention image "
-        "quality, resolution, or begin with a label. Choose the enum values that best match the "
-        "image. These content tags are accurate context: " + (wd14_tags or "")
+        "You are labeling a real photograph to train an image model. Return JSON only, matching the "
+        "schema. Choose the enum value that best fits each field; omit an optional field if it does "
+        "not clearly apply. Write 'description' as a detailed, factual account in this order: the "
+        "subject (how many people, that they are adults, apparent gender); the face (face shape, eyes, "
+        "lips, nose, brows, skin, hair color/length/style, makeup); then the visible body (build, "
+        "torso, chest, midriff, arms, legs, as visible); then clothing with materials, colors and "
+        "accessories (bags, phones, jewelry, glasses, shoes); then pose; then the setting and notable "
+        "background objects and fine detail. Do NOT mention image quality, resolution, camera, or "
+        "lighting in the description (those are separate fields), and do NOT begin with a label. "
+        "These content tags are accurate context: " + (wd14_tags or "")
     )
 
 
 def coerce_response(raw, vocab=VOCAB):
-    """Validate a raw Gemini dict against the vocab. Out-of-vocab -> dropped; arrays clamped to 2."""
+    """Validate a raw Gemini dict against the vocab. Out-of-vocab -> dropped; arrays clamped to ARRAY_MAX."""
     raw = raw or {}
-    q = raw.get("quality_level")
-    c = raw.get("capture_style")
-    return {
-        "quality_level": q if q in vocab["quality_level"] else "",
-        "capture_style": c if c in vocab["capture_style"] else "",
-        "lighting": [x for x in (raw.get("lighting") or []) if x in vocab["lighting"]][:2],
-        "condition": [x for x in (raw.get("condition") or []) if x in vocab["condition"]][:2],
-        "has_watermark": bool(raw.get("has_watermark")),
-        "nl": clean_nl(raw.get("description")),
-    }
+    out = {}
+    for k in SINGLE_SLOTS:
+        v = raw.get(k)
+        out[k] = v if v in vocab[k] else ""
+    for k in ARRAY_SLOTS:
+        out[k] = [x for x in (raw.get(k) or []) if x in vocab[k]][:ARRAY_MAX]
+    out["has_watermark"] = bool(raw.get("has_watermark"))
+    out["nl"] = clean_nl(raw.get("description"))
+    return out
 
 
-def assemble_caption(parts, safety_tag, wd14_tags):
-    """parts = coerce_response output. Empty pieces are omitted; anchor always leads."""
-    p = [ANCHOR]
-    if parts["quality_level"]:
-        p.append(parts["quality_level"])
-    if parts["capture_style"]:
-        p.append(parts["capture_style"])
-    p += parts["lighting"]
-    p += parts["condition"]
-    p.append(safety_tag)
+def assemble_caption(parts, wd14_tags, resolution="", fallback_rating="rating:general"):
+    """parts = coerce_response output. Empty pieces omitted; no anchor (v7).
+    rating = Gemini's if present else fallback_rating (Falconsai-derived); resolution derived locally."""
+    p = []
+    for k in _ORDER:
+        if k == "_resolution":
+            if resolution:
+                p.append(resolution)
+        elif k == "_rating":
+            p.append(parts.get("rating") or fallback_rating)
+        elif k in ARRAY_SLOTS:
+            p += parts.get(k, [])
+        elif parts.get(k):
+            p.append(parts[k])
     if wd14_tags:
         p.append(wd14_tags)
-    if parts["has_watermark"]:
+    if parts.get("has_watermark"):
         p.append("watermark")
-    if parts["nl"]:
+    if parts.get("nl"):
         p.append(parts["nl"])
     return ", ".join(x for x in p if x)
 
@@ -112,11 +175,11 @@ def save_cache(path, cache):
 class GeminiCaptioner:
     """Captions one image -> coerced style dict. `generate(path, tags) -> raw dict` is injectable
     (tests pass a fake). On any generate error/refusal the image falls back to a blank dict, which
-    assemble_caption renders as anchor + safety + tags only."""
+    assemble_caption renders as tags + fallback rating only."""
     def __init__(self, cfg, generate=None, cache=None):
         g = cfg["caption"]["gemini"]
         self.model = g["model"]
-        self.max_output_tokens = g.get("max_output_tokens", 256)
+        self.max_output_tokens = g.get("max_output_tokens", 450)
         self.max_retries = g.get("max_retries", 4)
         self.block_none = g.get("safety_block_none", True)
         self.schema = build_schema()

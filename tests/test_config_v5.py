@@ -31,7 +31,8 @@ def test_pipeline_config_invariants_and_v7_caption():
     # underage hard-block kept (legal boundary, non-negotiable)
     assert {"loli", "shota", "child"}.issubset(set(cap["block_tags"]))
 
-    # dataset: current training res (1024; V7 training will bump to 1536 in its own spec)
-    assert cfg["dataset"]["resolutions"] == [1024]
+    # dataset: v7 trains at 1536 (resize target); curate floor stays at the 1024 ingest floor
+    assert cfg["dataset"]["resolutions"] == [1536]
+    assert cfg["dataset"]["min_resolution"] == 1024
     assert "min_blur_var" in cfg["dataset"]
     assert "buckets_to_keep" not in cfg["dataset"]

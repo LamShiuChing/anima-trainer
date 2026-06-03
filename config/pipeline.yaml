@@ -35,9 +35,9 @@ caption:                         # v7: WD14 (EVA02) tags + Gemini expanded enum 
     cache_file: data/gemini_cache.json
 
 dataset:
-  min_resolution: 1024
+  min_resolution: 1024            # curate floor = ingest floor (keep; do NOT raise to 1536 or it drops everything <1536)
   # diffusion-pipe dataset.toml params:
-  resolutions: [1024]             # v5: 1024 training resolution
+  resolutions: [1536]             # v7: 1536 training resolution (images <1536 get upscaled by diffusion-pipe)
   min_ar: 0.5                    # widest portrait bucket (1:2)
   max_ar: 2.0                    # widest landscape bucket (2:1)
   num_ar_buckets: 7
@@ -46,7 +46,7 @@ dataset:
 
 finetune:                        # diffusion-pipe anima.toml (FULL finetune, not LoRA)
   base_dir: /workspace/anima     # Vast working dir (RUNBOOK sets this up)
-  project_name: anima_realism_ft_v6   # v6: SAME data, harder LR. From base (clean LR comparison vs v5). Launch only after v5 frees the GPU.
+  project_name: anima_realism_ft_v7   # v7: new dataset (1024 floor, 1536 train res, v7 captions). stage4 names dataset.toml by this -> no clobber of v6.
   init_from: ""                  # from BASE DiT (no warm-start) — isolates the LR variable vs v5
   epochs: 15                     # v6: higher LR peaks sooner; save_every_epoch -> pick best retrospectively
   lr: 1.5e-5                     # v6: ~2x v5's 8e-6. "slow + weak at 8e-6" = LR too timid for an anime->photo shift. Model card's own value is 2e-5.

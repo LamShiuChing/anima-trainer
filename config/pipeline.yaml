@@ -38,8 +38,8 @@ dataset:
   min_resolution: 1024            # curate floor = ingest floor (keep; do NOT raise to 1536 or it drops everything <1536)
   # diffusion-pipe dataset.toml params:
   resolutions: [1536]             # v7: 1536 training resolution (images <1536 get upscaled by diffusion-pipe)
-  min_ar: 0.5                    # widest portrait bucket (1:2)
-  max_ar: 2.0                    # widest landscape bucket (2:1)
+  min_ar: 0.66                   # v7: Anima DiT pos-emb caps at 120 patches (1920px); at 1536 area, AR must stay 0.66-1.5 or it OOBs
+  max_ar: 1.5                    # (0.5/2.0 at 1536 -> 2176px long side -> 136 patches > 120 -> AssertionError)
   num_ar_buckets: 7
   num_repeats: 1                 # lots of data; no duplication needed
   min_blur_var: 0.0              # backstop only (stage 1 does the real blur drop); raise if needed

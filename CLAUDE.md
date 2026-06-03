@@ -66,28 +66,41 @@ the best AND the overall look was still improving at 20 (undertrained, NOT overc
 converge in 20 epochs; more epochs and/or higher LR (**reinforces v6**) push overall realism further. **Keeper = epoch
 20** → DOWNLOAD → destroy instance (v3/v4 were lost by never downloading).
 
-## Next — v6 plan (user decisions 2026-06-03; execute next session)
+## Next — v6 = extend-v5 convergence probe (REFRAMED 2026-06-03; configs DONE, ready to launch)
 
-Goal: push **fine detail** (background, hands, phones/objects) + test whether a higher LR strengthens the look.
-- **Train res 1536** (up from 1024). ⚠️ **VRAM**: 1536 full-finetune likely >80 GB → may OOM on A100-80GB; resolve first
-  (`[model] qwen_nf4=true`, an H100, or check actual usage).
-- **Dataset `min_resolution: 768`** (down from v5's 1024) — keep MORE images; user accepts diffusion-pipe upscaling
-  768→1536 (soft-upscale trade-off, for more data/detail/variety). Keep the blur sharpness gate.
-- **lr higher** (pre-staged 1.5e-5; "higher LR" per user — confirm 1.5–2e-5), **epochs 18–20** (v5 was still climbing at
-  20 → don't cap low; save-every-epoch + pick best). From base for a clean test; consider warm-start from **v5-epoch20**
-  to save 1536 compute (decide next session). NOTE: v5 still improving at 20 also means a cheap alternative to v6 =
-  just **extend v5** (warm-start ep20, +N epochs at 8e-6) — but v6's higher LR converges faster + tests the hypothesis.
-- **Captions more detailed** — edit the Gemini prompt (`src/gemini_caption.py` `build_prompt`) to describe background,
-  objects, accessories (phones etc.), finer detail; bump `max_output_tokens` (~256→400).
-- **NSFW handling per user:** send ALL images to Gemini, **no pre-routing** (already true in v5) — let the API response
-  decide what it captions (BLOCK_NONE + tags-only fallback, already true). NEW: let **Gemini emit the safety tag** (add
-  to schema) instead of pre-determining. **KEEP the WD14 underage hard-block — legal boundary, non-negotiable.**
-- A pre-staged v6 (`anima_realism_ft_v6_*` tomls + `scripts/run_v6_train.sh`; lr 1.5e-5 / 15ep / 1024 / from-base) is on
-  `v5-build` — **update it to 1536 + min_res 768 + richer caption prompt + Gemini-safety-tag** before launching.
+**v6 reframed.** User goal = **push overall realism** (not fine detail). The old bundled plan (1536 + min_res
+768 + richer captions + safety-tag, all at once) was CUT — it confounds variables, risks OOM, and forces a
+costly recapture. Fine detail (small faces/hands/bg) is resolution-bound → handled on a separate **inference
+track** (ADetailer/FaceDetailer + HandDetailer + hires-fix), not by retraining.
 
-**Carried-over tradeoff:** v5's `blur≥100` gate biased toward sharp/professional shots → few `amateur snapshot` images →
-that control token is weakly trained. v6's `min_res 768` (more data) partly helps; loosen blur or tune rubric if amateur
-realism is wanted.
+**The probe answers ONE question cheaply: was v5's ceiling undertraining or LR?** We KNOW v5 was undertrained
+(monotonic climb, no plateau). We have ZERO evidence LR was too low (never saw a plateau) — that was an
+assumption. Dataset ruled out for overall realism (v5 makes good realism). So change ONE variable:
+- **Warm-start v5 epoch20, continue at the SAME lr 8e-6, +5 epochs (cum ~25), everything else byte-identical to v5.**
+- Decision rule: **still climbing → undertraining; pick best epoch / extend.** **Plateau → 8e-6 ceiling → escalate
+  to v6b** (fresh-from-base, lr 1.5–2e-5, 18–20 ep). The probe's curve shape is the answer.
+- v5 checkpoints saved locally (single-file DiT, 4.18 GB) in ComfyUI `models/diffusion_models/`:
+  `epoch10/12/15/20.safetensors` + base `anima_baseV10.safetensors`. **epoch20 = warm-start source.**
+
+**DONE on `v5-build` (commit 63f4ab7, pushed):** `outputs/anima_realism_ft_v6_train_config.toml` (transformer_path
+→ `anima_v5_epoch20.safetensors`, lr 8e-6, epochs 5), `scripts/run_v6_train.sh` (warm-start guard, log →
+`/workspace/train_v6.log`), frozen eval set `docs/superpowers/specs/2026-06-03-v6-eval-prompts.md`.
+Spec: `docs/superpowers/specs/2026-06-03-anima-realism-v6-design.md`. Plan (runbook): `docs/superpowers/plans/2026-06-03-anima-realism-v6.md`.
+
+**To launch (fresh A100, Vast runbook = plan Task 6):** `git clone -b v5-build .../LamShiuChing/anima-trainer repo`
+→ `vast_setup.sh` → upload `v5_dataset.tgz` (gdown) + **upload epoch20 → `models/anima_v5_epoch20.safetensors`
+(gdown)** → `run_v6_train.sh` → `tail -f /workspace/train_v6.log`. **Download `train_v6.log` (loss trend, hand to
+Claude) + best epoch BEFORE destroying.** Then eval v5-ep20 + v6 ep1..5 with the frozen prompt set.
+
+### v6b (deferred — only if probe plateaus, OR a future fine-detail run)
+- Higher LR: fresh-from-base, lr 1.5–2e-5, 18–20 ep, same data/captions. Reuse frozen eval set.
+- Fine-detail bundle (separate experiment): **1536** (⚠️ OOM >80 GB → `qwen_nf4`/H100/measure), **min_res 768**
+  (more data, accept 768→1536 upscale), **richer captions** (`src/gemini_caption.py` `build_prompt` describe
+  bg/objects/accessories; `max_output_tokens` ~256→400), **Gemini-emitted safety tag** (add to schema). **KEEP
+  WD14 underage hard-block — legal, non-negotiable.**
+
+**Carried-over tradeoff:** v5's `blur≥100` gate biased toward sharp/pro shots → `amateur snapshot` token weakly
+trained. The probe doesn't fix this (same data); a future `min_res 768`/looser-blur run would.
 
 ## Dataset
 

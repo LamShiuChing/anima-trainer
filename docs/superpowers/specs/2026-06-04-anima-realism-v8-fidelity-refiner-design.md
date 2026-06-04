@@ -1,7 +1,12 @@
 # Anima Realism v8 — design (fidelity refiner pass)
 
 > Date: 2026-06-04 · Branch: `v5-build` · Supersedes the "V7-HD 4k-originals" sketch in `CLAUDE.md`
-> Predecessor: V7 (keeper = `epoch18`, full-FT 1536, warm-start from v6 keeper, lr 8e-6)
+> Predecessor: V7 (keeper = `V7_epoch17.safetensors`, full-FT 1536, warm-start from v6 keeper, lr 8e-6)
+
+> **Warm-start source (on disk):**
+> `C:\Users\erede\Downloads\ComfyUI_windows_portable_nvidia\ComfyUI_windows_portable\ComfyUI\models\diffusion_models\V7_epoch17.safetensors`
+> Note: the session record labeled the V7 eval winner "epoch18"; the on-disk best is **epoch17**. That
+> file is the v8 warm-start source AND the eval baseline. ("ep18" in the prose below = this keeper.)
 
 ## Goal
 
@@ -157,7 +162,9 @@ twice). Judge **only by eval images.**
 Fresh, cheaper single-GPU host is fine (1536 full-FT fits one 80–96 GB card).
 
 1. `scripts/vast_setup.sh` — clone diffusion-pipe + download the 3 Anima base models.
-2. Upload the **v8 clean dataset** (gdown) + the **ep18 keeper** (gdown) → `…/models/anima_v7_epoch18.safetensors`.
+2. Upload the **v8 clean dataset** (gdown) + the **V7 keeper** `V7_epoch17.safetensors` (gdown) →
+   `…/models/anima_v7_epoch17.safetensors`. Local source:
+   `…\ComfyUI\models\diffusion_models\V7_epoch17.safetensors`.
 3. `scripts/vast_fetch_v8.sh` (gdown dataset + ep18, IDs as args, size/count checks).
 4. `scripts/run_v8_train.sh` — copies tomls into place + `nohup deepspeed --num_gpus=1 train.py …`,
    log → `/workspace/train_v8.log`. Watch `tail -f`.

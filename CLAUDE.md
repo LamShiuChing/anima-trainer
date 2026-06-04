@@ -1,8 +1,8 @@
 # CLAUDE.md — Anima Realism finetune project
 
 > Portable project memory. Lives in the project folder so it survives moving to another drive.
-> Current design: `docs/superpowers/specs/2026-06-02-anima-realism-v5-design.md` (v5).
-> History: `2026-05-31-...lora-design.md` (LoRA, abandoned), `2026-06-01-...v2-design.md` (v2 tag-only).
+> **CURRENT = V7** (training live). Captioning spec: `docs/superpowers/specs/2026-06-03-anima-realism-v7-captioning-design.md`.
+> Prompt guide: `docs/v7-prompt-guide.md`. History: v5 (`2026-06-02-...v5-design.md`), v6 probe, v2/LoRA (abandoned).
 
 ## Goal
 
@@ -13,9 +13,41 @@ a domain shift fought against the anime prior. Community realism finetunes of An
   via **diffusion-pipe**, on ~1942 Gemini-captioned sharp photos. (LoRA on local 4080 abandoned: 16GB can't fit a
   full finetune, and the anime→photo shift is too large for LoRA.)
 
-## Status (2026-06-02) — v5 TRAINING LIVE on Vast (A100-80GB)
+## Status (2026-06-03 EOD) — V7 TRAINING LIVE (Vast RTX 6000, Blackwell, 96 GB)
 
-**Current model = v5.** Pipeline rebuilt + validated end-to-end (subagent-driven, all tests green); training
+**Current = V7 full-finetune, ~epoch 5–6 of 40 ceiling, ~40 min/epoch.** Warm-start from the v6 keeper
+(`epoch25.safetensors` → uploaded as `models/anima_v6_keeper.safetensors`), **lr 8e-6 (VALIDATED by the v6 probe),
+1536 res, adamw_optimi, save-every-epoch.** Loss flat ~0.09 = NORMAL for flow-matching (uninformative; **judge by
+eval, not loss**). Epoch 5 "slightly better" — expected; warm-start + new captions + 1536 + new data = needs ~10–25
+epochs. **DON'T run all 40 (~27 hr $$); eval ep10/15, pick best, stop on visual plateau.**
+
+**v6 PROBE RESULT:** extend-v5 @8e-6 → cum-epoch 25 much better + still climbing = **UNDERTRAINING confirmed, lr 8e-6
+fine** (not LR-limited). v6b higher-LR arm dropped. (v6 keeper = epoch25, used as V7 warm-start.)
+
+**V7 dataset (LOCAL prep done):** ~6200 new raw → stages 1/3/4 → **2103 img+txt @1024 floor** (blur 100), 1536 train.
+Captions = **V7 vocab: NO `realistic photo` anchor, 18 enum axes** (shot/view/angle/quality-booru-ladder/capture/
+lighting/condition/color/lens/dof/expr/body/breast/ethnicity/skin/setting/rating) + **WD14 EVA02 @0.25** booru tags +
+rich NL. **80% full Gemini / 20% tags-only fallback** (NSFW refusals → EVA02 carries detail), **23 underage-blocked**.
+Known-OK noise: ~20% fallback ratings from Falconsai undercall (suggestive→general). `data/v7_dataset.zip`.
+
+**⚠️ HARD LIMIT — Anima DiT pos-emb caps at 120 patches = 1920 px/side** (VAE/8 × patch/2 = ÷16). At 1536, **AR must
+stay 0.66–1.5** (0.5/2.0 → 2176 px → 136 patches → AssertionError crash, hit + fixed). Baked into dataset toml + config.
+
+**INFERENCE:** generate at **~1536 area** (1536×1536, 1344×1728, 1856×1280; AR 0.66–1.5, dims ÷64) for full detail;
+lower res OK for drafts down to ~1 MP (warm-start from 1024-v6 keeps it forgiving). Don't gen native >1536-area (dup
+artifacts). Prompt guide + 10 test prompts: `docs/v7-prompt-guide.md`. Weak/dead triggers: grainy/soft/motion-blur
+(blur gate), rating:questionable (22), close-up (27).
+
+**V7 files (all on `v5-build`):** `outputs/anima_realism_ft_v7_{train,dataset}_config.toml`, `scripts/run_v7_train.sh`,
+`scripts/vast_fetch_v7.sh` (gdown dataset+keeper, IDs as args). Captioner: `src/gemini_caption.py` (rewritten v7),
+`src/03_caption.py`, `config/pipeline.yaml`. Tests green (40). **NEXT SESSION: eval ep10/15 → pick best → DOWNLOAD best
+epoch + `train_v7.log` BEFORE destroying the instance.**
+
+---
+
+## Status history (2026-06-02) — v5 (superseded by v6 probe + V7)
+
+**v5.** Pipeline rebuilt + validated end-to-end (subagent-driven, all tests green); training
 running on a rented Vast A100. v2/v3/v4 superseded. Spec: `docs/superpowers/specs/2026-06-02-anima-realism-v5-design.md`;
 plan: `docs/superpowers/plans/2026-06-02-anima-realism-v5.md`. Branch **`v5-build`** (pushed to origin, **NOT merged to master**).
 

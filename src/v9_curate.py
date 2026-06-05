@@ -100,10 +100,100 @@ def _gate_one(task):
         tile_vars = grid_laplacian_vars(gray, GRID_N)
         if not passes_bg_sharpness(tile_vars):  # gate 3: background sharpness (the v9 fix)
             return None
-        with Image.open(path_str) as im:        # phash for dedup (gate 4, done in parent)
+        with Image.open(path_str) as im:        # compute phash; Hamming dedup runs in main (gate 4)
             ph = imagehash.phash(im.convert("RGB"))
         bg_metric = sum(1 for v in tile_vars if v >= BG_TILE_T) / len(tile_vars)
         return {"path": path_str, "source": source, "w": w, "h": h, "px": w * h,
                 "blur": overall, "bg_metric": bg_metric, "phash": ph}
     except Exception:
         return None
+
+
+def _dedup_local(items, threshold):
+    """Greedy near-dup grouping on precomputed phashes (no re-open). Keep highest-res per group.
+    items: list of dicts with 'phash' (supports `-` => hamming) + 'px' (pixel count)."""
+    keep, used = [], set()
+    for i in range(len(items)):
+        if i in used:
+            continue
+        group = [i]
+        for j in range(i + 1, len(items)):
+            if j not in used and (items[i]["phash"] - items[j]["phash"]) <= threshold:
+                group.append(j)
+        used.update(group)
+        keep.append(items[max(group, key=lambda k: items[k]["px"])])
+    return keep
+
+
+def _crop_save_one(item):
+    """Worker (spawn-safe, top-level): AR-crop + save to CLEAN -> manifest row dict | None."""
+    from PIL import Image
+    p, w, h = item["path"], item["w"], item["h"]
+    try:
+        im = Image.open(p).convert("RGB")
+        box = ar_crop_box(w, h)
+        if box != (0, 0, w, h):
+            im = im.crop(box)
+        stem = Path(p).stem
+        dest = CLEAN / f"{item['source']}_{stem}.jpg"
+        k = 1
+        while dest.exists():                          # exact-name collision guard (cross-source)
+            dest = CLEAN / f"{item['source']}_{stem}_{k}.jpg"
+            k += 1
+        im.save(dest, quality=95)
+        cw, ch = im.size
+        return {"path": str(dest).replace("\\", "/"), "source": item["source"],
+                "width": str(cw), "height": str(ch), "phash": str(item["phash"]),
+                "blur_var": f"{item['blur']:.1f}", "bg_metric": f"{item['bg_metric']:.3f}",
+                "dropped": "False", "drop_reason": ""}
+    except Exception as e:
+        print(f"  skip (save failed) {p}: {e}")
+        return None
+
+
+def main():
+    import shutil
+    import concurrent.futures as cf
+    from tqdm import tqdm
+    import common
+
+    if CLEAN.exists():
+        shutil.rmtree(CLEAN)
+    CLEAN.mkdir(parents=True, exist_ok=True)
+
+    tasks = []
+    for src in SOURCES:
+        d = Path(src)
+        if not d.is_dir():
+            print(f"  (skip missing source {src})")
+            continue
+        for p in common.iter_images(d):
+            tasks.append((str(p), d.name))
+    print(f"gating {len(tasks)} images from {len(SOURCES)} sources with {WORKERS} workers...")
+
+    survivors = []
+    with cf.ProcessPoolExecutor(max_workers=WORKERS) as ex:
+        for res in tqdm(ex.map(_gate_one, tasks, chunksize=8), total=len(tasks), desc="gate"):
+            if res is not None:
+                survivors.append(res)
+    print(f"  passed gates: {len(survivors)}/{len(tasks)}")
+
+    kept = _dedup_local(survivors, HAMMING)
+    print(f"  after global dedup: {len(kept)}")
+
+    rows = []
+    with cf.ProcessPoolExecutor(max_workers=WORKERS) as ex:
+        for row in tqdm(ex.map(_crop_save_one, kept, chunksize=8), total=len(kept), desc="crop"):
+            if row is not None:
+                rows.append(row)
+
+    common.write_manifest(MANIFEST, rows)
+    dist = {}
+    for r in rows:
+        dist[r["source"]] = dist.get(r["source"], 0) + 1
+    print(f"v9 curate: wrote {len(rows)} pairs {dist} -> {CLEAN}")
+    print(f"manifest -> {MANIFEST}  (next: python src/03_caption.py)")
+
+
+if __name__ == "__main__":
+    main()

@@ -59,3 +59,21 @@ def test_grid_laplacian_vars_shape_and_bimodal():
     left = [vars_[r * 4 + c] for r in range(4) for c in range(2)]    # cols 0-1
     right = [vars_[r * 4 + c] for r in range(4) for c in range(2, 4)]  # cols 2-3
     assert min(left) > max(right)   # sharp side strictly sharper than flat side
+
+
+class _PH:
+    """Stub phash supporting hamming subtraction, so dedup is testable without imagehash."""
+    def __init__(self, v):
+        self.v = v
+    def __sub__(self, other):
+        return abs(self.v - other.v)
+
+
+def test_dedup_keeps_highest_res_per_group():
+    items = [
+        {"phash": _PH(0), "px": 100},     # near-dup of next (hamming 1 <= 8); lower res -> dropped
+        {"phash": _PH(1), "px": 400},     # near-dup; higher res -> KEEP
+        {"phash": _PH(100), "px": 50},    # distinct (hamming 99 > 8) -> KEEP
+    ]
+    kept = v9._dedup_local(items, 8)
+    assert sorted(it["px"] for it in kept) == [50, 400]

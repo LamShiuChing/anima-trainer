@@ -77,8 +77,11 @@ def search_page(key, query, page, per_page, orientation):
     params = {"query": query, "per_page": per_page, "page": page}
     if orientation:
         params["orientation"] = orientation
-    req = urllib.request.Request(API + "?" + urllib.parse.urlencode(params),
-                                 headers={"Authorization": key})
+    req = urllib.request.Request(
+        API + "?" + urllib.parse.urlencode(params),
+        headers={"Authorization": key,
+                 "User-Agent": "anima-v8/1.0 (research dataset tool)",
+                 "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=30) as r:
         remaining = r.headers.get("X-Ratelimit-Remaining")
         data = json.loads(r.read().decode("utf-8"))

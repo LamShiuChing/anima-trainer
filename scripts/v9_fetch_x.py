@@ -5,9 +5,11 @@ WHY: X has amateur deep-focus selfies/mirror-selfies that Pexels lacks (right co
 upload is re-encoded to JPEG (diseased encoding). The v9 curate gates (>=1536 + Laplacian + grid
 background-sharpness) are the safety net. Targeting good accounts beats search.
 
-COST (pay-per-use, verified 2026-06-05): you are billed ~$0.005 per POST returned by a read.
-Media (via tweet expansion) and the CDN image downloads are NOT separately billed. So cost ~=
-(posts read) * $0.005, regardless of how many images you keep. To spend less per kept image:
+COST (pay-per-use): the docs list $0.005/post read, but OBSERVED billing was ~$0.02 per ~300 reads
+(~$0.00007/read, 2026-06-05). i.e. cost is NEGLIGIBLE -> the real bottleneck is YIELD (most X photos
+are < 1536px), not money. The printed $ below is a ROUGH estimate; the X console is the source of
+truth. Because reads are cheap, the right lever for more images is a BIG --max-reads (not loosening
+the >=1536 filter, which would only download soft sub-1536 junk that curate drops). To raise yield:
   - search mode auto-adds  has:images -is:retweet  + real-photo negatives  -> fewer junk reads.
   - page size shrinks near --max-reads so you never overshoot the budget by a whole page.
   - multi-image posts give up to 4 images for ONE read (free value).
@@ -48,7 +50,7 @@ import urllib.request
 from pathlib import Path
 
 API = "https://api.x.com/2"
-PRICE_READ = 0.005  # USD per POST returned by a read (media expansion + CDN downloads are NOT billed)
+PRICE_READ = 0.00007  # ROUGH: observed ~$0.02 per ~300 reads (2026-06-05). X console = source of truth.
 
 # search-mode auto-filter: image posts only, no retweet-dups, and REAL PHOTOS only (exclude art/cgi/ai).
 # Each negative also shrinks the result set -> fewer paid reads. Override with --no-auto-filter.
@@ -147,7 +149,7 @@ def save_media(media_list, out, min_short, saved_state):
 def _run(base, token, args, saved_state, reads_state):
     for media in iter_pages(base, token, args.max_reads, reads_state):
         save_media(media, args._out, args.min_short, saved_state)
-        print(f"  saved={saved_state[0]} posts_read={reads_state[0]} ~${reads_state[0]*PRICE_READ:.2f}")
+        print(f"  saved={saved_state[0]} posts_read={reads_state[0]} ~${reads_state[0]*PRICE_READ:.3f} (rough)")
         # cost guard: most X photos are < 1536px (esp. mirror selfies). If a query yields 0 keepers
         # in the first ~100 reads, it's a low-res query -> stop now (~$0.50) instead of burning the budget.
         if reads_state[0] >= 100 and saved_state[0] == 0:
@@ -163,7 +165,7 @@ def main():
     g.add_argument("--handles", help="comma-separated account handles (no @) for timeline mode")
     g.add_argument("--query", help="search query; wrap multiple terms in (a OR b OR c)")
     ap.add_argument("--full-archive", action="store_true", help="full-archive search (back to 2006)")
-    ap.add_argument("--max-reads", type=int, default=500, help="soft cap on posts read (cost guard; ~$0.005 each)")
+    ap.add_argument("--max-reads", type=int, default=2000, help="soft cap on posts read (~$0.00007 each = cheap; raise freely for more yield)")
     ap.add_argument("--min-short", type=int, default=1536, help="min short side (px) to keep")
     ap.add_argument("--no-auto-filter", action="store_true", help="do NOT auto-add has:images -is:retweet + real-photo negatives")
     ap.add_argument("--dry-run", action="store_true", help="print the query/URL + budget, spend NOTHING")
@@ -173,7 +175,7 @@ def main():
     args._out = Path(args.out)
     saved_state, reads_state = [0], [0]
     est = args.max_reads * PRICE_READ
-    print(f"budget: up to {args.max_reads} reads ~= ${est:.2f} max (set a hard SPENDING LIMIT in the X console too)")
+    print(f"budget: up to {args.max_reads} reads ~= ${est:.3f} max (rough; X console is truth. reads are cheap -> raise freely)")
 
     if args.dry_run:
         if args.query:
@@ -206,8 +208,8 @@ def main():
              token, args, saved_state, reads_state)
 
     print(f"\nDone. Saved {saved_state[0]} images (>= {args.min_short}px) -> {args._out}/")
-    print(f"Cost: {reads_state[0]} post-reads ~= ${reads_state[0]*PRICE_READ:.2f}  "
-          f"(media + CDN downloads not billed; confirm actual spend in the X console)")
+    print(f"Cost: {reads_state[0]} post-reads ~= ${reads_state[0]*PRICE_READ:.3f} (ROUGH; check X console). "
+          f"Reads are cheap -> if yield is low, raise --max-reads rather than lowering --min-short.")
 
 
 if __name__ == "__main__":

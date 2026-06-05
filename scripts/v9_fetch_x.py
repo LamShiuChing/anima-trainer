@@ -148,6 +148,13 @@ def _run(base, token, args, saved_state, reads_state):
     for media in iter_pages(base, token, args.max_reads, reads_state):
         save_media(media, args._out, args.min_short, saved_state)
         print(f"  saved={saved_state[0]} posts_read={reads_state[0]} ~${reads_state[0]*PRICE_READ:.2f}")
+        # cost guard: most X photos are < 1536px (esp. mirror selfies). If a query yields 0 keepers
+        # in the first ~100 reads, it's a low-res query -> stop now (~$0.50) instead of burning the budget.
+        if reads_state[0] >= 100 and saved_state[0] == 0:
+            sys.stderr.write("  ABORT: 0 images >= --min-short in first ~100 reads -> low-res query; "
+                             "stopping to save cost. Try a broader query or lower --min-short (but <1536 "
+                             "upscales soft and is dropped by curate anyway).\n")
+            return
 
 
 def main():

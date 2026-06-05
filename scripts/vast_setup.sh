@@ -6,6 +6,15 @@ set -euo pipefail
 BASE="${ANIMA_BASE:-/workspace/anima}"
 DP_DIR="$BASE/diffusion-pipe"
 MODELS="$BASE/models"
+
+# Guard: deepspeed's inference-v2 import crashes on Python >= 3.13 ("qkv_w not found"). Fail fast
+# BEFORE downloading ~6 GB of models, so a wrong host image is caught in seconds, not minutes.
+PYV=$(python -c "import sys;print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+case "$PYV" in
+  3.10|3.11|3.12) echo "Python $PYV OK" ;;
+  *) echo "ERROR: Python $PYV. deepspeed/torch need Python 3.10-3.12 (3.13/3.14 break the deepspeed import)."; \
+     echo "Destroy this instance and rent one with a Python 3.10-3.12 image (standard 'PyTorch 2.x CUDA' template)."; exit 1 ;;
+esac
 HF="https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files"
 
 # HF's Xet transport (cas-bridge.xethub.hf.co) is flaky on some Vast hosts -> force classic HTTP.

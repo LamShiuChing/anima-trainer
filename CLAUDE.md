@@ -1,9 +1,9 @@
 # CLAUDE.md — Anima Realism finetune project
 
 > Portable project memory. Lives in the project folder so it survives moving to another drive.
-> **CURRENT = V8 FIDELITY REFINER — dataset BUILT (405 pairs), pushed, ready to launch on Vast.** Warm-start =
-> `V7_epoch17.safetensors` (on-disk best; the record had labeled the eval-winner "ep18" but the downloaded keeper
-> is ep17 — that file is the warm-start + eval baseline). Spec: `docs/superpowers/specs/2026-06-04-anima-realism-v8-fidelity-refiner-design.md`;
+> **CURRENT = V8 TRAINED — keeper = `v8_epoch10.safetensors` (great, still climbing). Instance destroyed. NEXT = v9
+> (fix messy backgrounds = DATA gap, + more style epochs), warm-start ep10.** v8 warm-started `V7_epoch17.safetensors`
+> (on-disk best; record had labeled the eval-winner "ep18"). Spec: `docs/superpowers/specs/2026-06-04-anima-realism-v8-fidelity-refiner-design.md`;
 > plan: `docs/superpowers/plans/2026-06-04-anima-realism-v8-fidelity-refiner.md`; eval: `docs/superpowers/specs/2026-06-04-v8-eval-prompts.md`.
 > V7 captioning spec: `docs/superpowers/specs/2026-06-03-anima-realism-v7-captioning-design.md`.
 > Prompt guide: `docs/v7-prompt-guide.md`. History: v5 (`2026-06-02-...v5-design.md`), v6 probe, v2/LoRA (abandoned).
@@ -17,12 +17,24 @@ a domain shift fought against the anime prior. Community realism finetunes of An
   via **diffusion-pipe**, on ~1942 Gemini-captioned sharp photos. (LoRA on local 4080 abandoned: 16GB can't fit a
   full finetune, and the anime→photo shift is too large for LoRA.)
 
-## Status (2026-06-04, later) — V8 FIDELITY REFINER. Dataset built (405 pairs), pushed, ready to launch.
+## Status (2026-06-05) — V8 TRAINED. ep10 = great keeper, STILL CLIMBING. Instance destroyed. NEXT = v9 (backgrounds).
 
-**V8 = fidelity refiner.** Goal: erase the learned **compression look** + add high-freq detail (fingers/clothes/
-phones/toes/bg) while **keeping the amateur aesthetic.** Warm-start `V7_epoch17.safetensors` (on-disk best),
-full-FT, **lr 4e-6** (lower than v7's validated 8e-6 → refine not disturb; a GUESS, tune from eval), **10ep ceiling,
-save-every, pick-best.** Not started on Vast yet.
+**V8 SUCCESS — keeper so far = `v8_epoch10.safetensors`** (much better than ep17: more detail/texture/lighting,
+"already usable"). Eval climb: **ep5 much better → ep8 > ep5 → ep10 still improving (NOT plateaued).** Same
+undertraining pattern a 4th time — at **lr 4e-6** (gentler than v7's 8e-6) 10 epochs is too few to converge. Loss was
+flat-noise (0.02–0.34, no trend, 40 prints) while quality climbed → **loss BLIND, reconfirmed.** Run clean (10 ep
+saved, no OOM/NaN). **Downloaded locally + verified 4.18 GB: ep2/ep5/ep8/ep10 + `train_v8.log`. Instance DESTROYED**
+(everything saved first; ~$1.3/hr Vast, ~12 min/epoch so 10ep ≈ 2 hr).
+
+**⚠️ Two open wants (2026-06-05):** (1) fully learn lighting/style → MORE EPOCHS (still climbing) — warm-start ep10,
+extend; (2) **messy/low-quality backgrounds in portraits → NOT an epochs fix, a DATA GAP.** bg bucket was starved
+(**9 imgs, 2%**) + detail/anchor sources have blurred/bokeh backgrounds → model never saw sharp coherent backgrounds →
+can't render them. **Fix = v9 dataset: add sharp deep-focus environment/scene shots + sharp-background portraits +
+a real bg bucket.** Recommended: **v9 = warm-start ep10 + background-enriched dataset** → gets the extra style epochs
+AND fixes backgrounds in one run (vs extending on the same bg-poor data, which can't add backgrounds).
+
+**V8 build recap.** Goal: erase the learned **compression look** + add high-freq detail (fingers/clothes/phones/toes)
+while **keeping amateur.** Warm-start `V7_epoch17.safetensors`, full-FT, lr 4e-6, save-every, pick-best.
 
 **Core principle — fidelity ⟂ aesthetic.** Honest split-axis captioning: quality ladder + resolution = fidelity;
 `capture_style` (amateur snapshot/casual phone) = aesthetic. Keeps "clean" from binding to "studio." **Inference
@@ -55,15 +67,22 @@ phash dedup + **AR-crop to 0.66–1.5** (pos-emb 120-patch / 1920px cap), bucket
 
 **V8 files (branch `v5-build`, PUSHED 890f2d6):** spec + plan + eval-prompts; `outputs/anima_realism_ft_v8_{train,
 dataset}_config.toml`; `scripts/{run_v8_train.sh, vast_fetch_v8.sh, v8_fetch_pexels.py, v8_fetch_openimages.py}`;
-`src/v8_curate.py` + `tests/test_v8_curate.py` (6 green). `data/v8_dataset.zip` (1.45 GB) built LOCALLY, **NOT uploaded
-yet.** Pexels gotcha fixed: API 403 on default urllib UA (Cloudflare) → added `User-Agent`.
+`src/v8_curate.py` + `tests/test_v8_curate.py` (6 green). `data/v8_dataset.zip` (1.45 GB) uploaded to Drive
+(ID `1GurWF_pqHHSAj_pGWQsxqWOH8Wfbd4Y2`; ep17 ID `1B7CiuSJBecf3OmEEwP3efON1Nnni9YDW`). Trained ckpts
+`v8_epoch{2,5,8,10}.safetensors` downloaded to `…\ComfyUI\models\diffusion_models\` (each 4.18 GB; **ep10 = keeper**).
+Pexels gotcha fixed: API 403 on default urllib UA (Cloudflare) → added `User-Agent`. Vast paste-wrap gotcha: long
+arg lines split → pass IDs as short `VAR=...` lines.
 
-**NEXT (launch V8):** (1) upload `data/v8_dataset.zip` + `V7_epoch17.safetensors` to Drive (get share IDs). (2) rent
-Vast (≥80 GB, Blackwell-recent CUDA): `git clone -b v5-build .../anima-trainer repo` → `vast_setup.sh` →
-`vast_fetch_v8.sh <dataset_id> <ep17_id>` → `run_v8_train.sh` → `tail -f /workspace/train_v8.log`. (3) eval each epoch
-vs **ep17 baseline** with the eval-prompts doc (expect best ~ep3–6; watch amateur-drift canaries B6/B7). (4) **DOWNLOAD
-best epoch (verify ~4.18 GB single-file) + full `train_v8.log` BEFORE destroy.** OOM at 1536 on a smaller card →
-uncomment `qwen_nf4=true` in the train toml.
+**NEXT = v9 (fix backgrounds + squeeze more lighting/style).** Warm-start `v8_epoch10.safetensors` (zero penalty vs
+continuing — diffusion-pipe is weights-only warm-start). Steps: (1) upload `v8_epoch10.safetensors` to Drive (get ID).
+(2) **Build a background-enriched dataset** — the messy-background fix: keep the 405 (or re-curate) + ADD **sharp
+DEEP-FOCUS environment/scene shots + sharp-background (not bokeh) portraits + a real bg bucket** (Pexels queries:
+`living room interior`, `bedroom`, `city street`, `landscape sharp`, `office interior`; favor deep focus). Re-run
+`v8_curate.py` → `03_caption.py` → `04_build_dataset.py`. (3) New train toml warm-start ep10, lr 4e-6 (or try 6e-6 —
+no drift seen at 4e-6 = headroom), save-every, pick-best. (4) Rent Vast, fetch, run, eval vs **ep10 baseline**
+(watch amateur-drift), DOWNLOAD best BEFORE destroy. **Cost note: ~12 min/epoch, ~$1.3/hr — destroy the instance the
+moment training+download finish; never leave it idle.** ⚠️ Backgrounds are DATA-bound, not epochs — more epochs on the
+bg-poor v8 data will NOT add background detail.
 
 ## Status (2026-06-04) — V7 DONE. Keeper = epoch18 label (on-disk file = V7_epoch17.safetensors). Instance destroyed after download.
 

@@ -32,11 +32,16 @@ import argparse
 import json
 import os
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 API = "https://api.pexels.com/v1/search"
+
+
+def mask(s):
+    return f"{s[:4]}...{s[-4:]} (len {len(s)})" if len(s) > 8 else f"(len {len(s)})"
 
 
 def parse_args():
@@ -56,10 +61,14 @@ def get_key():
         load_dotenv()
     except ImportError:
         pass
-    key = os.environ.get("PEXELS_API_KEY")
+    key = (os.environ.get("PEXELS_API_KEY") or "").strip().strip('"').strip("'").strip()
     if not key:
         sys.stderr.write("PEXELS_API_KEY not set. Get a free key at https://www.pexels.com/api/ "
                          "and add it to .env as PEXELS_API_KEY=...\n")
+        sys.exit(1)
+    if key in ("your_key_here", "your_key", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"):
+        sys.stderr.write(f"PEXELS_API_KEY is still the placeholder ({key!r}). "
+                         "Paste your real key from https://www.pexels.com/api/\n")
         sys.exit(1)
     return key
 
@@ -85,6 +94,7 @@ def download(url, dest):
 def main():
     args = parse_args()
     key = get_key()
+    print(f"Using PEXELS_API_KEY: {mask(key)}")
     out = Path(args.out) / args.bucket
     out.mkdir(parents=True, exist_ok=True)
 
@@ -92,6 +102,17 @@ def main():
     while saved < args.max:
         try:
             data, remaining = search_page(key, args.query, page, 80, args.orientation)
+        except urllib.error.HTTPError as e:
+            if e.code == 403:
+                sys.stderr.write(
+                    f"403 Forbidden — Pexels rejected the key {mask(key)}.\n"
+                    "  Fix: confirm the key is correct (copy from https://www.pexels.com/api/, "
+                    "no quotes/spaces), and that .env lives in the project root.\n")
+            elif e.code == 429:
+                sys.stderr.write("429 — hourly rate limit hit (200/hr). Wait and re-run.\n")
+            else:
+                sys.stderr.write(f"HTTP {e.code} on page {page}: {e!r}\n")
+            break
         except Exception as e:
             sys.stderr.write(f"API error on page {page}: {e!r}\n")
             break

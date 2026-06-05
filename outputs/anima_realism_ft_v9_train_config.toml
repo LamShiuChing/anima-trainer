@@ -1,0 +1,58 @@
+# diffusion-pipe — Anima FULL finetune. v9 = BACKGROUND FIX + style epochs.
+# WARM-START from the V8 keeper (v8_epoch10.safetensors): keeps ep10's realism/detail/lighting,
+# trains on a BIGGER, sharp-BACKGROUND-gated whole-pool dataset to fix blurry selfie/portrait
+# backgrounds (per-concept blur learning) while keeping the amateur aesthetic + NSFW.
+# lr 6e-6 (hotter than v8's 4e-6 = headroom; cooler than v7's 8e-6). epochs 20 (ep10 was still
+# climbing); save-every -> pick best on the frozen eval set (loss is blind here).
+# Spec: docs/superpowers/specs/2026-06-05-anima-realism-v9-backgrounds-design.md
+output_dir = '/workspace/anima/outputs/anima_realism_ft_v9'
+dataset = '/workspace/anima/outputs/anima_realism_ft_v9_dataset_config.toml'
+
+epochs = 20
+micro_batch_size_per_gpu = 1
+pipeline_stages = 1
+gradient_accumulation_steps = 1
+gradient_clipping = 1.0
+steps_per_print = 100
+warmup_steps = 100
+activation_checkpointing = true
+
+# Eval disabled (no eval set in-trainer). Preview epoch checkpoints in ComfyUI with the frozen eval prompts.
+eval_before_first_step = false
+eval_every_n_epochs = 100000
+
+save_every_n_epochs = 1
+checkpoint_every_n_minutes = 999999
+save_dtype = 'bfloat16'
+
+[model]
+type = 'anima'
+# WARM-START: upload the V8 keeper here as anima_v8_epoch10.safetensors (NOT base, NOT v7).
+transformer_path = '/workspace/anima/models/anima_v8_epoch10.safetensors'
+vae_path = '/workspace/anima/models/qwen_image_vae.safetensors'
+qwen_path = '/workspace/anima/models/Qwen3-0.6B-Base'
+dtype = 'bfloat16'
+llm_adapter_lr = 0
+cache_text_embeddings = false
+shuffle_tags = false          # captions carry one NL sentence -> shuffling commas would shred it
+tag_delimiter = ', '
+shuffle_keep_first_n = 1
+tag_dropout_percent = 0
+caption_dropout_percent = 0.1
+caption_mode = 'tags'
+timestep_sample_method = 'logit_normal'
+# ⚠️ 1536 VRAM: same as v7/v8 (ran fine on the 96GB Blackwell). If OOM on a smaller card:
+#    (1) uncomment qwen_nf4 below, and/or (2) switch [optimizer] to adamw8bit (needs bitsandbytes).
+# qwen_nf4 = true
+
+# NOTE: no [adapter] block => full finetune (not LoRA).
+
+[optimizer]
+type = 'adamw_optimi'         # same as v7/v8; switch to adamw8bit only if 1536 OOMs the card
+lr = 6e-06                    # v9: hotter than v8's 4e-6 (headroom; no drift seen at 4e-6). Watch amateur drift.
+betas = [0.9, 0.99]
+weight_decay = 0.01
+eps = 1e-8
+
+[monitoring]
+enable_wandb = false

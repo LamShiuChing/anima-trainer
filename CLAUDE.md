@@ -1,7 +1,11 @@
 # CLAUDE.md — Anima Realism finetune project
 
 > Portable project memory. Lives in the project folder so it survives moving to another drive.
-> **CURRENT = V7** (training live). Captioning spec: `docs/superpowers/specs/2026-06-03-anima-realism-v7-captioning-design.md`.
+> **CURRENT = V8 FIDELITY REFINER — dataset BUILT (405 pairs), pushed, ready to launch on Vast.** Warm-start =
+> `V7_epoch17.safetensors` (on-disk best; the record had labeled the eval-winner "ep18" but the downloaded keeper
+> is ep17 — that file is the warm-start + eval baseline). Spec: `docs/superpowers/specs/2026-06-04-anima-realism-v8-fidelity-refiner-design.md`;
+> plan: `docs/superpowers/plans/2026-06-04-anima-realism-v8-fidelity-refiner.md`; eval: `docs/superpowers/specs/2026-06-04-v8-eval-prompts.md`.
+> V7 captioning spec: `docs/superpowers/specs/2026-06-03-anima-realism-v7-captioning-design.md`.
 > Prompt guide: `docs/v7-prompt-guide.md`. History: v5 (`2026-06-02-...v5-design.md`), v6 probe, v2/LoRA (abandoned).
 
 ## Goal
@@ -13,13 +17,76 @@ a domain shift fought against the anime prior. Community realism finetunes of An
   via **diffusion-pipe**, on ~1942 Gemini-captioned sharp photos. (LoRA on local 4080 abandoned: 16GB can't fit a
   full finetune, and the anime→photo shift is too large for LoRA.)
 
-## Status (2026-06-03 EOD) — V7 TRAINING LIVE (Vast RTX 6000, Blackwell, 96 GB)
+## Status (2026-06-04, later) — V8 FIDELITY REFINER. Dataset built (405 pairs), pushed, ready to launch.
 
-**Current = V7 full-finetune, ~epoch 5–6 of 40 ceiling, ~40 min/epoch.** Warm-start from the v6 keeper
-(`epoch25.safetensors` → uploaded as `models/anima_v6_keeper.safetensors`), **lr 8e-6 (VALIDATED by the v6 probe),
-1536 res, adamw_optimi, save-every-epoch.** Loss flat ~0.09 = NORMAL for flow-matching (uninformative; **judge by
-eval, not loss**). Epoch 5 "slightly better" — expected; warm-start + new captions + 1536 + new data = needs ~10–25
-epochs. **DON'T run all 40 (~27 hr $$); eval ep10/15, pick best, stop on visual plateau.**
+**V8 = fidelity refiner.** Goal: erase the learned **compression look** + add high-freq detail (fingers/clothes/
+phones/toes/bg) while **keeping the amateur aesthetic.** Warm-start `V7_epoch17.safetensors` (on-disk best),
+full-FT, **lr 4e-6** (lower than v7's validated 8e-6 → refine not disturb; a GUESS, tune from eval), **10ep ceiling,
+save-every, pick-best.** Not started on Vast yet.
+
+**Core principle — fidelity ⟂ aesthetic.** Honest split-axis captioning: quality ladder + resolution = fidelity;
+`capture_style` (amateur snapshot/casual phone) = aesthetic. Keeps "clean" from binding to "studio." **Inference
+dial:** prompt `amateur snapshot, best quality, highres, sharp` + negative `jpeg artifacts, compressed, blurry,
+low quality`. Full-FT (not LoRA) chosen because erasing compression = moving base weights (LoRA only adds a delta on
+top of still-compressed ep17 → residual leaks).
+
+**⚠️ KEY LEARNING — compression is learned PER CONCEPT, not globally.** The model outputs soft mirror-selfies because
+its *mirror-selfie training data was the compressed social-media ones* → it believes "mirror selfie = soft." It
+de-compresses a concept **only by seeing that concept rendered clean.** Generic clean hands teach clean *hands*, not
+clean *mirror selfies*. Consequences: (a) **anchor bucket = clean versions of the user's ACTUAL outputs** (mirror
+selfies, their compositions), NOT random generic people — that de-compresses real use-cases AND reinforces specifics
+(kills the dilution worry). (b) **detail crops** (decontextualized hands/fabric/feet) = pure texture/fidelity, ~zero
+concept dilution → safe. (c) **ep17 = concept memory; generic data = texture teacher; keep the nudge gentle (low lr,
+few epochs) or the specifics erode.** (d) Do NOT train on the user's current soft images — reinforces the disease.
+
+**Dataset — ALL-CLEAN, ZERO compressed.** Own originals = the compressed disease → EXCLUDED. Sourced HIGH-RES from
+**Pexels API** (`scripts/v8_fetch_pexels.py`, 3–6k px, filtered ≥1536 before download; free key in `.env` as
+`PEXELS_API_KEY`, 25k/mo). **Open Images is a DEAD END (≤1024 px)** — `scripts/v8_fetch_openimages.py` kept for
+reference only. Buckets `data/v8_raw/{detail,anchor,bg}` (target 60/35/5; actual = anchor-heavy 104/311/9, user chose
+proceed: anchor=their compositions=high-leverage). **Built = 405 img+txt pairs** (4 underage-blocked, 84 explicit→
+Gemini-refused→WD14-tags fallback, ~15 vanished mid-run). **Known issue:** detail bucket ~1/3 contaminated (scenery/
+whole-person, not body-part crops) — user chose proceed-as-is (all clean, ~8% off-target, de-compression goal intact).
+
+**Curation = `src/v8_curate.py` (REPLACES stage 1 for v8):** gates ≥1536 short side + Laplacian sharpness ≥100 +
+phash dedup + **AR-crop to 0.66–1.5** (pos-emb 120-patch / 1920px cap), bucket-labeled → `data/v8_clean/` +
+`data/v8_manifest.csv`. Existing **stage 3 (caption)** + **stage 4 (build)** consume it unchanged.
+`config/pipeline.yaml` repointed: `paths.manifest`→`data/v8_manifest.csv`, `paths.dataset`→`data/v8_dataset`,
+`finetune.project_name`→`anima_realism_ft_v8`. (v8 uses the SAME v7 captioner → no need to delete `gemini_cache.json`.)
+
+**V8 files (branch `v5-build`, PUSHED 890f2d6):** spec + plan + eval-prompts; `outputs/anima_realism_ft_v8_{train,
+dataset}_config.toml`; `scripts/{run_v8_train.sh, vast_fetch_v8.sh, v8_fetch_pexels.py, v8_fetch_openimages.py}`;
+`src/v8_curate.py` + `tests/test_v8_curate.py` (6 green). `data/v8_dataset.zip` (1.45 GB) built LOCALLY, **NOT uploaded
+yet.** Pexels gotcha fixed: API 403 on default urllib UA (Cloudflare) → added `User-Agent`.
+
+**NEXT (launch V8):** (1) upload `data/v8_dataset.zip` + `V7_epoch17.safetensors` to Drive (get share IDs). (2) rent
+Vast (≥80 GB, Blackwell-recent CUDA): `git clone -b v5-build .../anima-trainer repo` → `vast_setup.sh` →
+`vast_fetch_v8.sh <dataset_id> <ep17_id>` → `run_v8_train.sh` → `tail -f /workspace/train_v8.log`. (3) eval each epoch
+vs **ep17 baseline** with the eval-prompts doc (expect best ~ep3–6; watch amateur-drift canaries B6/B7). (4) **DOWNLOAD
+best epoch (verify ~4.18 GB single-file) + full `train_v8.log` BEFORE destroy.** OOM at 1536 on a smaller card →
+uncomment `qwen_nf4=true` in the train toml.
+
+## Status (2026-06-04) — V7 DONE. Keeper = epoch18 label (on-disk file = V7_epoch17.safetensors). Instance destroyed after download.
+
+**V7 SUCCESS — keeper = `epoch18`** (downloaded locally; instance shut down after verifying download + log).
+Full-finetune, warm-start from the v6 keeper (`anima_v6_keeper.safetensors` = v6 epoch25), **lr 8e-6 (VALIDATED),
+1536 res, adamw_optimi, save-every-epoch.** Trained ~18 epochs (~40 min/ep, ~1.12 s/iter on RTX 6000 Blackwell 96 GB).
+**Eval verdict:** ep5 "slightly better" → ep10 "normal body, 5 fingers, clear face, better detail" → **ep18 "much
+better"** = the keeper. Loss stayed flat-noise 0.067–0.124 the whole run (flow-matching loss is **blind to quality**;
+lr fixed 8e-6 by design = no decay → judged ENTIRELY by eval images, not loss/lr). Climb ep5→ep18 confirms the v6
+"undertraining, lr 8e-6 fine" finding once more.
+
+**⚠️ INFERENCE — LOW CFG (saturation finding).** Anima = flow-matching DiT → **oversaturated / high-contrast =
+CFG-too-high signature, NOT undertraining.** Fix at sample time: **CFG ~3.0–4.5** (not the SDXL 6–8 habit), optional
+RescaleCFG ~0.7, sampler `euler`/`dpmpp_2m` + `simple`/`beta`, steps 20–30 (steps fix detail not color), confirm VAE =
+`qwen_image_vae.safetensors`. User confirmed lower CFG fixed it.
+
+**Known-OK weakness:** some outputs soft/low-quality — traced to training sources **<1536 that upscaled soft**
+(`upscale = no new detail`, per pipeline note). Not a model fault. → fixed by the next run (V7-HD below), not more epochs.
+
+**NEXT = V7-HD high-pass detail run (planned, not started):** warm-start from **ep18** → train on **≥1536 / 4k native
+originals** to add high-frequency sharpness while keeping the realism ep18 already has. Same AR 0.66–1.5 pos-emb limit
+applies. Needs: 4k dataset prep (re-run stages 1/3/4 with ≥1536 sources), upload, fresh/cheaper Vast host, new train toml
+(transformer_path → ep18). lr 8e-6 + save-every + pick-best still the playbook.
 
 **v6 PROBE RESULT:** extend-v5 @8e-6 → cum-epoch 25 much better + still climbing = **UNDERTRAINING confirmed, lr 8e-6
 fine** (not LR-limited). v6b higher-LR arm dropped. (v6 keeper = epoch25, used as V7 warm-start.)
@@ -40,8 +107,12 @@ artifacts). Prompt guide + 10 test prompts: `docs/v7-prompt-guide.md`. Weak/dead
 
 **V7 files (all on `v5-build`):** `outputs/anima_realism_ft_v7_{train,dataset}_config.toml`, `scripts/run_v7_train.sh`,
 `scripts/vast_fetch_v7.sh` (gdown dataset+keeper, IDs as args). Captioner: `src/gemini_caption.py` (rewritten v7),
-`src/03_caption.py`, `config/pipeline.yaml`. Tests green (40). **NEXT SESSION: eval ep10/15 → pick best → DOWNLOAD best
-epoch + `train_v7.log` BEFORE destroying the instance.**
+`src/03_caption.py`, `config/pipeline.yaml`. Tests green (40).
+
+**NEXT SESSION (V7-HD):** keeper `epoch18` is DOWNLOADED. (1) Build 4k/≥1536-source dataset (stages 1/3/4, raise the
+source-quality floor — the soft-image fix). (2) New train toml warm-starting from ep18. (3) Rent Vast, upload, run,
+eval, pick best, DOWNLOAD before destroy. Same lr 8e-6 / save-every / pick-best / AR 0.66–1.5 rules.
+⚠️ Confirm `train_v7.log` (full, to ep18) was pulled before the V7 instance was destroyed — hand to Claude for record.
 
 ---
 

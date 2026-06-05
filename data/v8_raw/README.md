@@ -16,6 +16,15 @@ data/v8_raw/
                    by the FiftyOne script + Poly Haven photographic renders.
 ```
 
+## Automated sourcing (high-res)
+
+- **`scripts/v8_fetch_pexels.py` — USE THIS.** Pexels API, originals 3000–6000px, filtered ≥1536 before
+  download. Needs a free `PEXELS_API_KEY` in `.env`. Run per bucket+query (see the script header for
+  query ideas). This is the real high-fidelity fuel, esp. for `detail/`.
+- **`scripts/v8_fetch_openimages.py` — limited.** Open Images caps at ~1024px longest side, so almost
+  nothing clears the ≥1536 gate. Kept for reference / variety only; do **not** rely on it for v8.
+- **Manual** Unsplash/Pixabay/Pexels downloads → sort into the buckets by hand (best curation control).
+
 ## Hard rules before you drop an image in
 
 1. **Curate at 100% zoom.** Reject anything soft, upscaled, or re-compressed. **Stated

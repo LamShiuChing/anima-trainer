@@ -93,7 +93,7 @@ def iter_pages(base_url, token, max_reads, reads_state):
     while reads_state[0] < max_reads:
         url = base_url
         if token_param:
-            url += f"&pagination_token={token_param}" if "users/" in base_url else f"&next_token={token_param}"
+            url += f"&pagination_token={token_param}" if "/users/" in base_url else f"&next_token={token_param}"
         data = api_get(url, token)
         posts = data.get("data", []) or []
         reads_state[0] += len(posts)
@@ -124,7 +124,7 @@ def save_media(media_list, out, min_short, saved_state, reads_state):
             req = urllib.request.Request(orig, headers={"User-Agent": "anima-v9/1.0"})
             with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
                 f.write(r.read())
-            reads_state[1] += 1  # media read billed
+            reads_state[1] += 1  # counted toward the conservative $ estimate (may overcount; CDN downloads are free)
             saved_state[0] += 1
         except Exception as e:
             sys.stderr.write(f"  download failed {key}: {e!r}\n")
@@ -152,7 +152,11 @@ def main():
             if reads_state[0] >= args.max_reads:
                 break
             print(f"timeline @{handle} ...")
-            uid = resolve_user(handle, token)
+            try:                                  # one bad handle must not abort the rest of the run
+                uid = resolve_user(handle, token)
+            except Exception as e:
+                sys.stderr.write(f"  skip @{handle}: {e}\n")
+                continue
             base = f"{API}/users/{uid}/tweets?exclude=replies,retweets&{_media_params()}"
             for media in iter_pages(base, token, args.max_reads, reads_state):
                 save_media(media, out, args.min_short, saved_state, reads_state)

@@ -16,7 +16,8 @@ imports with stdlib only -> tests can import the pure helpers without those deps
 from pathlib import Path
 
 # --- sources + gate constants ---
-SOURCES = ["data/raw", "data/v8_raw", "data/v9_x", "data/v9_nsfw"]
+# data/v9_x is a manual STAGING area for X pulls -> hand-pick keepers into data/raw; NOT curated directly.
+SOURCES = ["data/raw", "data/v8_raw", "data/v9_nsfw"]
 CLEAN = Path("data/v9_clean")
 MANIFEST = "data/v9_manifest.csv"
 MIN_SHORT = 1536

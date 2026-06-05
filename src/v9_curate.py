@@ -63,3 +63,47 @@ def passes_bg_sharpness(tile_vars, tile_t=BG_TILE_T, min_frac=BG_MIN_SHARP_FRAC)
         return False
     sharp = sum(1 for v in tile_vars if v >= tile_t)
     return (sharp / len(tile_vars)) >= min_frac
+
+
+def grid_laplacian_vars(gray, n=GRID_N):
+    """Split a 2D grayscale array into n*n tiles -> Laplacian variance per tile (row-major)."""
+    import cv2
+    h, w = gray.shape[:2]
+    ys = [int(round(i * h / n)) for i in range(n + 1)]
+    xs = [int(round(j * w / n)) for j in range(n + 1)]
+    out = []
+    for i in range(n):
+        for j in range(n):
+            tile = gray[ys[i]:ys[i + 1], xs[j]:xs[j + 1]]
+            out.append(float(cv2.Laplacian(tile, cv2.CV_64F).var()) if tile.size else 0.0)
+    return out
+
+
+def _gate_one(task):
+    """Worker (spawn-safe, top-level): (path_str, source) -> dict | None.
+    Heavy libs imported inside so module import stays light. None = failed a gate / unreadable."""
+    path_str, source = task
+    import cv2
+    import numpy as np
+    import imagehash
+    from PIL import Image
+    try:
+        gray = cv2.imdecode(np.fromfile(path_str, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
+        if gray is None:                       # cv2 can't decode (e.g. some webp) -> skip
+            return None
+        h, w = gray.shape[:2]
+        if min(w, h) < MIN_SHORT:              # gate 1: resolution
+            return None
+        overall = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+        if overall < BLUR_MIN:                 # gate 2: overall sharpness (also filters compression)
+            return None
+        tile_vars = grid_laplacian_vars(gray, GRID_N)
+        if not passes_bg_sharpness(tile_vars):  # gate 3: background sharpness (the v9 fix)
+            return None
+        with Image.open(path_str) as im:        # phash for dedup (gate 4, done in parent)
+            ph = imagehash.phash(im.convert("RGB"))
+        bg_metric = sum(1 for v in tile_vars if v >= BG_TILE_T) / len(tile_vars)
+        return {"path": path_str, "source": source, "w": w, "h": h, "px": w * h,
+                "blur": overall, "bg_metric": bg_metric, "phash": ph}
+    except Exception:
+        return None

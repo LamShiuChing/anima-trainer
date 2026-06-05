@@ -45,3 +45,17 @@ def test_bg_empty_fails():
 def test_bg_half_sharp_passes_at_default_fraction():
     # exactly half sharp -> passes at default min_frac 0.5
     assert v9.passes_bg_sharpness([200.0] * 8 + [10.0] * 8) is True
+
+
+def test_grid_laplacian_vars_shape_and_bimodal():
+    np = __import__("pytest").importorskip("numpy")
+    __import__("pytest").importorskip("cv2")
+    # left half = sharp checkerboard, right half = flat gray -> right tiles ~0 variance
+    img = np.full((400, 400), 128, dtype=np.uint8)
+    img[:, :200][::2, ::2] = 255
+    img[:, :200][1::2, 1::2] = 0
+    vars_ = v9.grid_laplacian_vars(img, n=4)
+    assert len(vars_) == 16
+    left = [vars_[r * 4 + c] for r in range(4) for c in range(2)]    # cols 0-1
+    right = [vars_[r * 4 + c] for r in range(4) for c in range(2, 4)]  # cols 2-3
+    assert min(left) > max(right)   # sharp side strictly sharper than flat side

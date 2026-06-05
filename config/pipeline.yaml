@@ -47,9 +47,12 @@ dataset:
 finetune:                        # diffusion-pipe anima.toml (FULL finetune, not LoRA)
   base_dir: /workspace/anima     # Vast working dir (RUNBOOK sets this up)
   project_name: anima_realism_ft_v9   # v9: background fix. stage4 names dataset.toml by this
-  init_from: ""                  # from BASE DiT (no warm-start) — isolates the LR variable vs v5
-  epochs: 15                     # v6: higher LR peaks sooner; save_every_epoch -> pick best retrospectively
-  lr: 1.5e-5                     # v6: ~2x v5's 8e-6. "slow + weak at 8e-6" = LR too timid for an anime->photo shift. Model card's own value is 2e-5.
+  # NOTE: v9 trains from the HAND-CRAFTED outputs/anima_realism_ft_v9_train_config.toml; stage 5
+  # (05_make_train_config.py) is NOT in the v9 runbook. These values are kept consistent with that
+  # toml only so a stray stage-5 run doesn't silently emit a base-DiT / wrong-LR config.
+  init_from: /workspace/anima/models/anima_v8_epoch10.safetensors  # v9 warm-start (v8 ep10); NOT base DiT
+  epochs: 20                     # v9: ep10 was still climbing -> more epochs, save-every, pick best
+  lr: 6e-6                       # v9: hotter than v8's 4e-6 (headroom; no drift seen at 4e-6), cooler than v7's 8e-6
   optimizer: adamw_optimi        # proven default; A100-80GB has VRAM to spare (no need for 8-bit)
   warmup_steps: 100
   save_every_n_epochs: 1         # one inference-ready model export per epoch (~4-5GB each)

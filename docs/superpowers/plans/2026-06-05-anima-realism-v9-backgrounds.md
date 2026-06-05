@@ -838,6 +838,10 @@ def main():
     cost = reads_state[0] * PRICE_READ + reads_state[1] * PRICE_READ
     print(f"\nDone. Saved {saved_state[0]} images (>= {args.min_short}px) -> {out}/")
     print(f"Reads: {reads_state[0]} posts + {reads_state[1]} media  ~= ${cost:.2f} (estimate)")
+
+
+if __name__ == "__main__":
+    main()
 ```
 
 - [ ] **Step 2: Verify it parses + the CLI works**

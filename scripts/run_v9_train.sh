@@ -6,10 +6,11 @@
 # Log -> /workspace/train_v9.log (download from Jupyter after run for loss-trend analysis).
 set -euo pipefail
 BASE=/workspace/anima
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # repo root = parent of scripts/ (no matter where it's cloned)
 
 mkdir -p "$BASE/outputs"
-cp "$BASE/repo/outputs/anima_realism_ft_v9_dataset_config.toml" "$BASE/outputs/"
-cp "$BASE/repo/outputs/anima_realism_ft_v9_train_config.toml" "$BASE/outputs/"
+cp "$REPO/outputs/anima_realism_ft_v9_dataset_config.toml" "$BASE/outputs/"
+cp "$REPO/outputs/anima_realism_ft_v9_train_config.toml" "$BASE/outputs/"
 
 test -f "$BASE/models/anima_v8_epoch10.safetensors" || { echo "MISSING warm-start ckpt -> upload v8_epoch10.safetensors to models/anima_v8_epoch10.safetensors"; exit 1; }
 test -f "$BASE/models/qwen_image_vae.safetensors"  || { echo "MISSING VAE -> run scripts/vast_setup.sh"; exit 1; }

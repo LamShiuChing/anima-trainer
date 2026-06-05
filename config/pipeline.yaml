@@ -2,9 +2,9 @@
 paths:
   raw: data/raw
   clean: data/clean
-  dataset: data/v8_dataset       # v8: was data/dataset (don't clobber v7)
+  dataset: data/v9_dataset       # v9: re-curated whole pool
   outputs: outputs
-  manifest: data/v8_manifest.csv # v8: written by src/v8_curate.py, consumed by stages 3+4
+  manifest: data/v9_manifest.csv # v9: written by src/v9_curate.py, consumed by stages 3+4
   models_dir: models
   trainer_dir: trainer
 
@@ -46,7 +46,7 @@ dataset:
 
 finetune:                        # diffusion-pipe anima.toml (FULL finetune, not LoRA)
   base_dir: /workspace/anima     # Vast working dir (RUNBOOK sets this up)
-  project_name: anima_realism_ft_v8   # v8: fidelity refiner. stage4 names dataset.toml by this -> outputs/anima_realism_ft_v8_dataset_config.toml
+  project_name: anima_realism_ft_v9   # v9: background fix. stage4 names dataset.toml by this
   init_from: ""                  # from BASE DiT (no warm-start) — isolates the LR variable vs v5
   epochs: 15                     # v6: higher LR peaks sooner; save_every_epoch -> pick best retrospectively
   lr: 1.5e-5                     # v6: ~2x v5's 8e-6. "slow + weak at 8e-6" = LR too timid for an anime->photo shift. Model card's own value is 2e-5.

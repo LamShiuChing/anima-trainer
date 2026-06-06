@@ -1,0 +1,58 @@
+# diffusion-pipe — Anima FULL finetune. v10 = PHOTOREAL RENDER-STYLE (preserve base concepts).
+# WARM-START FROM BASE (anima-base-v1.0.safetensors): base has max concept/character knowledge but
+# ZERO photos (HF: non-anime data filtered to exclude photos) -> photoreal is a real shift, hence 50 epochs.
+# lr 6e-6 = gentle ("light touch", per HF authors). Concept preservation = pick-best epoch (concept-
+# retention eval), NOT low LR. save-every-5 -> 10 ckpts (ep5..ep50) ~42GB.
+# Captions = quality tokens + RAM++ real-photo tags (no anime tagger, no Gemini, no anchor).
+# Spec: docs/superpowers/specs/2026-06-06-anima-realism-v10-design.md
+output_dir = '/workspace/anima/outputs/anima_realism_ft_v10'
+dataset = '/workspace/anima/outputs/anima_realism_ft_v10_dataset_config.toml'
+
+epochs = 50
+micro_batch_size_per_gpu = 1
+pipeline_stages = 1
+gradient_accumulation_steps = 1
+gradient_clipping = 1.0
+steps_per_print = 100
+warmup_steps = 100
+activation_checkpointing = true
+
+eval_before_first_step = false
+eval_every_n_epochs = 100000
+
+save_every_n_epochs = 5
+checkpoint_every_n_minutes = 999999
+save_dtype = 'bfloat16'
+
+[model]
+type = 'anima'
+# WARM-START FROM BASE DiT (downloaded by scripts/vast_setup.sh). NOT a prior epoch.
+transformer_path = '/workspace/anima/models/anima-base-v1.0.safetensors'
+vae_path = '/workspace/anima/models/qwen_image_vae.safetensors'
+qwen_path = '/workspace/anima/models/Qwen3-0.6B-Base'
+dtype = 'bfloat16'
+llm_adapter_lr = 0
+cache_text_embeddings = false
+shuffle_tags = false          # quality-token prefix must stay at the front; global shuffle would scramble it
+tag_delimiter = ', '
+shuffle_keep_first_n = 1
+tag_dropout_percent = 0
+caption_dropout_percent = 0.1
+caption_mode = 'tags'
+timestep_sample_method = 'logit_normal'
+# ⚠️ 1536 full-FT from base may exceed 80GB. OOM fallbacks:
+#    (1) uncomment qwen_nf4 below, and/or (2) switch [optimizer] to adamw8bit (needs bitsandbytes),
+#    or rent a 96GB card (RTX 6000 Pro Blackwell, as v7).
+# qwen_nf4 = true
+
+# NOTE: no [adapter] block => full finetune (not LoRA).
+
+[optimizer]
+type = 'adamw_optimi'         # fp32; switch to adamw8bit only if 1536 OOMs the card
+lr = 6e-06                    # gentle; pick-best on the concept-retention eval is the real guard
+betas = [0.9, 0.99]
+weight_decay = 0.01
+eps = 1e-8
+
+[monitoring]
+enable_wandb = false

@@ -64,20 +64,20 @@ Pipeline over `data/raw/`, in order:
 4. **Scale-aware sharpness:** Laplacian variance computed on a **fixed-size center crop / fixed
    downscale** so a 6k and a 1.3k image are judged on the same scale. Threshold tuned from the
    distribution (start ~ the v5 value, re-tune from emitted metrics). Kills "big but soft".
-5. **Upscale detector (the fake-big killer):**
-   - *Round-trip residual:* downscale 2× then upscale back; compute SSIM vs original. Real-detail
-     photos lose a lot (low SSIM); already-upscaled ones barely change (high SSIM → flag).
-   - *FFT radial spectrum:* estimate the **true detail resolution** from where the radial power
-     spectrum collapses to the noise floor; drop where true-res ≪ nominal-res.
-   - Both cheap, local; combine (either-flags → drop, with tunable thresholds).
+5. **Upscale detector (the fake-big killer) — FFT high-frequency energy ratio:** fraction of 2D-FFT
+   spectral energy above a cutoff of Nyquist. Upscaled/soft images concentrate energy in low
+   frequencies → low ratio → drop. numpy-only (no skimage dependency). (A downscale→upscale SSIM
+   round-trip measures the same "no real high-freq detail" signal and is a possible alternative, but
+   the FFT ratio is chosen to avoid an extra dependency.)
 6. **Compression gate:** read JPEG **quantization table** (`PIL Image.quantization`) → estimate
    quality, drop Q < ~85; plus an **8×8 blockiness** metric for DCT block artifacts.
-7. **Underage hard-block backstop (NON-NEGOTIABLE):** run a minor-detector purely as a **drop
-   gate** (discard the detector's tags; we caption with RAM++). Kept for legal/safety even though
-   we no longer use a booru tagger for captions. (Implementation: reuse the existing WD14 underage
-   `block_tags` path as a safety-only filter, or an equivalent.)
-8. **AR-crop to 0.66–1.5** (Anima DiT pos-emb 120-patch / 1920px cap; wider/taller crashes at 1536).
+7. **AR-crop to 0.66–1.5** (Anima DiT pos-emb 120-patch / 1920px cap; wider/taller crashes at 1536).
    Center-crop the long side only so short side (≥1280) is preserved. Reuse `ar_crop_box`.
+
+**Underage hard-block backstop (NON-NEGOTIABLE)** runs in the **caption stage** (`src/v10_caption.py`),
+not curate — the GPU taggers already load there. WD14 (`block_tags`) is run purely as a **drop gate**
+(its tags are discarded; captions come from RAM++). Kept for legal/safety even though we no longer
+use a booru tagger for captions. Flagged rows are marked `dropped=True` in the manifest.
 
 **Output:** flat `data/v10_clean/` + `data/v10_manifest.csv`. The manifest records **all metrics**
 (width, height, blur_var, ssim_residual, est_true_res, jpeg_q, blockiness, phash, drop_reason) so
@@ -118,11 +118,13 @@ masterpiece, best quality, score_7, <rating>, <RAM++ tags>
 **Env:** local on the 4080, global Python, `USE_TF=0` at top (numpy-2/TF auto-import crash, per
 prior runs). RAM++ downloads on first run.
 
-## 5. Build (`src/v10_build_dataset.py`)
+## 5. Build (reuse `src/04_build_dataset.py` — no new file)
 
-Copy captioned `data/v10_clean/` → flat `data/v10_dataset/` + `.txt` sidecars; emit the
-diffusion-pipe `outputs/anima_realism_ft_v10_dataset_config.toml`. Require a caption + the 1280
-floor backstop. (Mirror stage 4 with v10 paths; can reuse `04_build_dataset.py` logic.)
+Stage 4 is path-driven via `config/pipeline.yaml`. With `paths.manifest=data/v10_manifest.csv`,
+`paths.dataset=data/v10_dataset`, `dataset.min_resolution=1280`, and `finetune.project_name=
+anima_realism_ft_v10`, running `python src/04_build_dataset.py` reads the v10 manifest (rows carry
+`caption` + width/height from curate+caption), copies captioned images → flat `data/v10_dataset/` +
+`.txt` sidecars, and emits `outputs/anima_realism_ft_v10_dataset_config.toml`. No new build code (DRY).
 
 ## 6. Train config (`outputs/anima_realism_ft_v10_train_config.toml`)
 
@@ -160,10 +162,11 @@ download finish.** Disk: 10 ckpts × 4.18 GB ≈ 42 GB.
 ## 9. Deliverables
 
 - `src/v10_curate.py` + `tests/test_v10_curate.py`
-- `src/v10_caption.py` (RAM++ tags + Falconsai rating + quality tokens)
-- `src/v10_build_dataset.py`
-- `outputs/anima_realism_ft_v10_{train,dataset}_config.toml`
+- `src/v10_caption.py` + `tests/test_v10_caption.py` (RAM++ tags + Falconsai rating + quality tokens + WD14 underage gate)
+- `config/pipeline.yaml` (repointed to v10 paths/config)
+- `outputs/anima_realism_ft_v10_train_config.toml` (hand-written) + `..._dataset_config.toml` (emitted by stage 4)
 - `scripts/run_v10_train.sh`, `scripts/vast_fetch_v10.sh`
+- Build: **reuse** `src/04_build_dataset.py` (no new file)
 - Eval prompt docs: `docs/superpowers/specs/2026-06-06-v10-eval-prompts.md`
   (photoreal + concept-retention sets)
 - This spec.

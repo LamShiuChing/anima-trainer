@@ -17,6 +17,9 @@ neg: worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifac
 ## B. Concept-retention set (did base knowledge survive? — written in base-native format)
 > Probe concepts/poses/objects the base knew. Watch for the epoch where these start degrading
 > (losing the concept, collapsing to generic) -> pick the epoch JUST BEFORE that.
+> NOTE: these use the base-native `safe` rating token on purpose — v10 TRAINS `rating:general`/
+> `rating:explicit` (Falconsai), not `safe`. `safe` here probes the BASE model's prior, which is
+> exactly what this set measures (did base knowledge survive). Not a mismatch.
 1. masterpiece, best quality, score_7, safe, person in a maid outfit, indoor
 2. masterpiece, best quality, score_7, safe, knight in plate armor, holding a sword, field
 3. masterpiece, best quality, score_7, safe, person in a kimono, garden, cherry blossoms

@@ -2,9 +2,9 @@
 paths:
   raw: data/raw
   clean: data/clean
-  dataset: data/v9_dataset       # v9: re-curated whole pool
+  dataset: data/v10_dataset       # v10: full restart
   outputs: outputs
-  manifest: data/v9_manifest.csv # v9: written by src/v9_curate.py, consumed by stages 3+4
+  manifest: data/v10_manifest.csv # v10: written by src/v10_curate.py, consumed by stage 3 (caption) + 4 (build)
   models_dir: models
   trainer_dir: trainer
 
@@ -33,37 +33,37 @@ caption:                         # v7: WD14 (EVA02) tags + Gemini expanded enum 
     max_retries: 4
     concurrency: 12                  # parallel Gemini calls. Free tier (~15 RPM): lower to ~4. Paid tier 1+: raise to 20-50. 429s self-throttle via backoff.
     cache_file: data/gemini_cache.json
+  ram:                                   # v10: RAM++ real-photo tagger (replaces booru WD14 for captions)
+    checkpoint: models/ram_plus_swin_large_14m.pth   # from HF xinyu1205/recognize-anything-plus-model
+    image_size: 384
+    quality_prefix: "masterpiece, best quality, score_7"   # base-native quality tokens (curated = all sharp)
 
 dataset:
-  min_resolution: 1024            # curate floor = ingest floor (keep; do NOT raise to 1536 or it drops everything <1536)
-  # diffusion-pipe dataset.toml params:
-  resolutions: [1536]             # v7: 1536 training resolution (images <1536 get upscaled by diffusion-pipe)
-  min_ar: 0.66                   # v7: Anima DiT pos-emb caps at 120 patches (1920px); at 1536 area, AR must stay 0.66-1.5 or it OOBs
-  max_ar: 1.5                    # (0.5/2.0 at 1536 -> 2176px long side -> 136 patches > 120 -> AssertionError)
+  min_resolution: 1280            # v10: floor (curate already gated; build backstop). <1280 upscales too hard at 1536
+  resolutions: [1536]
+  min_ar: 0.66
+  max_ar: 1.5
   num_ar_buckets: 7
-  num_repeats: 1                 # lots of data; no duplication needed
-  min_blur_var: 0.0              # backstop only (stage 1 does the real blur drop); raise if needed
+  num_repeats: 1
+  min_blur_var: 0.0
 
-finetune:                        # diffusion-pipe anima.toml (FULL finetune, not LoRA)
-  base_dir: /workspace/anima     # Vast working dir (RUNBOOK sets this up)
-  project_name: anima_realism_ft_v9   # v9: background fix. stage4 names dataset.toml by this
-  # NOTE: v9 trains from the HAND-CRAFTED outputs/anima_realism_ft_v9_train_config.toml; stage 5
-  # (05_make_train_config.py) is NOT in the v9 runbook. These values are kept consistent with that
-  # toml only so a stray stage-5 run doesn't silently emit a base-DiT / wrong-LR config.
-  init_from: /workspace/anima/models/anima_v8_epoch10.safetensors  # v9 warm-start (v8 ep10); NOT base DiT
-  epochs: 20                     # v9: ep10 was still climbing -> more epochs, save-every, pick best
-  lr: 6e-6                       # v9: hotter than v8's 4e-6 (headroom; no drift seen at 4e-6), cooler than v7's 8e-6
-  optimizer: adamw_optimi        # proven default; A100-80GB has VRAM to spare (no need for 8-bit)
+finetune:
+  base_dir: /workspace/anima
+  project_name: anima_realism_ft_v10     # v10: stage 4 names dataset.toml by this
+  init_from: /workspace/anima/models/anima-base-v1.0.safetensors   # v10: WARM-START FROM BASE (max concept knowledge)
+  epochs: 50                             # v10: project experience; save-every, pick best
+  lr: 6e-6                               # v10: gentle ("light touch", HF authors); pick-best is the concept guard
+  optimizer: adamw_optimi
   warmup_steps: 100
-  save_every_n_epochs: 1         # one inference-ready model export per epoch (~4-5GB each)
-  checkpoint_every_n_minutes: 999999  # effectively OFF — avoid ~20GB optimizer-state dumps filling disk
-  steps_per_print: 100           # deepspeed log cadence; 100 = ~1 clean status line / ~45s (default 1 = spam)
-  llm_adapter_lr: 0              # freeze Qwen3 LLM adapter (domain shift; preserve text understanding)
-  tag_dropout_percent: 0      # v5: hybrid tag+NL captions used verbatim (dropping comma-pieces would mangle the NL sentence)
-  caption_dropout_percent: 0.10  # v5: CFG: % steps trained with empty caption (drops whole caption, safe)
+  save_every_n_epochs: 5                 # 10 ckpts (ep5..ep50) ~42GB; fits Vast disk
+  checkpoint_every_n_minutes: 999999
+  steps_per_print: 100
+  llm_adapter_lr: 0
+  tag_dropout_percent: 0
+  caption_dropout_percent: 0.10
   dit_file: anima-base-v1.0.safetensors
   vae_file: qwen_image_vae.safetensors
-  qwen_file: Qwen3-0.6B-Base    # HF DIR (loader needs tokenizer+config, not a single .safetensors); from Qwen/Qwen3-0.6B-Base
+  qwen_file: Qwen3-0.6B-Base
 
 models:                          # Anima training assets pulled by download_models.ps1
   hf_repo: circlestone-labs/Anima

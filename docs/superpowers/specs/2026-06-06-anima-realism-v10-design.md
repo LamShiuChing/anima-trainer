@@ -42,7 +42,7 @@ not the anime *render style*.
 | Data source | `data/raw/` (6396 readable) | "any photo from raw" |
 | Resolution floor | **1280** short side (~2699 candidates pre-gate) | User; <1280 upscales too hard at 1536 |
 | Train resolution | **1536** | User; full detail |
-| Captions | **`masterpiece, best quality, score_7, [rating]` + RAM++ tags + Florence-2 short caption** | Real-photo tagger (not booru anime); quality tokens reuse base priors; NL feeds the LLM TE |
+| Captions | **`masterpiece, best quality, score_7, [rating]` + RAM++ tags** | Real-photo tagger (not booru anime); quality tokens reuse base priors. Florence-2 NL dropped (simplicity) |
 | Anchor | **none** ("realistic photo" anchor dropped) | 100% photo output; concept safety comes from warm-start + pick-best, not an anchor |
 | LR | **6e-6** | Gentle ("light touch"); pick-best is the real preservation lever |
 | Epochs | **50**, `save_every_n_epochs=5` (10 ckpts ≈ 42 GB) | Undertraining seen 4× at low LR; 50ep = project experience |
@@ -93,7 +93,7 @@ v8's `ar_crop_box` / dedup. Pure helpers stay stdlib-only and import-safe for te
 Per image, assemble:
 
 ```
-masterpiece, best quality, score_7, <rating>, <RAM++ tags>, <Florence-2 short caption>
+masterpiece, best quality, score_7, <rating>, <RAM++ tags>
 ```
 
 - **Quality tokens** `masterpiece, best quality, score_7` — base-native, strong learned priors;
@@ -102,19 +102,21 @@ masterpiece, best quality, score_7, <rating>, <RAM++ tags>, <Florence-2 short ca
 - **`<rating>`** — `safe` / `explicit` from the existing local NSFW detector (Falconsai), booru-style.
 - **RAM++ tags** (Recognize Anything Plus) — real-world tag vocabulary (`woman, kitchen, window,
   sunlight, mug, smile`). Local, no API. The photo-domain equivalent of WD14.
-- **Florence-2 short caption** — one NL sentence (MIT, tiny, fast, local). Feeds the Qwen3 **LLM**
-  text encoder properly; mitigates the tag-only mushiness that hurt v2/v3/v4.
-- `shuffle_tags=false`, `tag_dropout=0` (the NL sentence has commas — shuffling would shred it).
+- `shuffle_tags=false`, `tag_dropout=0` (keep the quality-token prefix fixed at the front;
+  a global shuffle would scramble it). Deterministic captions.
 - `caption_dropout=0.1` kept (CFG).
 
-**No Gemini, no WD14/EVA02 for captions, no realism anchor.**
+**No Gemini, no WD14/EVA02, no Florence-2, no realism anchor.** Pure quality-tokens + RAM++ tags.
 
-**Known tradeoff (flagged, accepted):** RAM++/Florence-2 are weaker on explicit NSFW anatomical
-detail than the old EVA02 booru tags. If NSFW fidelity disappoints after eval, add a fallback in a
-later iteration; not in v10 scope.
+**Known tradeoffs (flagged, accepted):**
+- **Tag-only underuses the Qwen3 LLM text encoder** (the mushiness that hurt v2/v3/v4). At 1536 with
+  sharp sources the *resolution* cause of that old blur is removed, and RAM++ tags are richer than
+  booru; accepted. If output is mushy after eval, re-add a short NL caption (Florence-2) next run.
+- **RAM++ is weaker on explicit NSFW anatomical detail** than the old EVA02 booru tags. Accepted for
+  v10; add a fallback later if NSFW fidelity disappoints.
 
 **Env:** local on the 4080, global Python, `USE_TF=0` at top (numpy-2/TF auto-import crash, per
-prior runs). RAM++ and Florence-2 both download on first run.
+prior runs). RAM++ downloads on first run.
 
 ## 5. Build (`src/v10_build_dataset.py`)
 
@@ -158,7 +160,7 @@ download finish.** Disk: 10 ckpts × 4.18 GB ≈ 42 GB.
 ## 9. Deliverables
 
 - `src/v10_curate.py` + `tests/test_v10_curate.py`
-- `src/v10_caption.py` (RAM++ + Florence-2 + Falconsai rating)
+- `src/v10_caption.py` (RAM++ tags + Falconsai rating + quality tokens)
 - `src/v10_build_dataset.py`
 - `outputs/anima_realism_ft_v10_{train,dataset}_config.toml`
 - `scripts/run_v10_train.sh`, `scripts/vast_fetch_v10.sh`
@@ -174,6 +176,7 @@ download finish.** Disk: 10 ckpts × 4.18 GB ≈ 42 GB.
 - **Concept erosion without an anchor** — pick-best on the concept-retention eval is the only guard.
   If concepts erode too early relative to photoreal arriving, reconsider re-introducing a quality/
   task token as a soft anchor.
-- **RAM++/Florence-2 NSFW weakness** — accepted for v10.
+- **Tag-only LLM-TE underuse + RAM++ NSFW weakness** — accepted for v10; re-add a short NL caption
+  next run if output is mushy.
 - **Curate thresholds** (sharpness / SSIM-residual / true-res / jpeg-Q / blockiness) need tuning
   from the emitted metric distribution before the full run — budget a calibration pass on a sample.

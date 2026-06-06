@@ -116,3 +116,188 @@ def jpeg_quality_estimate(qtable):
         return 100
     q = (200.0 - scale) / 2.0 if scale < 100 else 5000.0 / scale
     return int(max(1, min(100, round(q))))
+
+
+def _to_gray(path):
+    """Read an image as a float64 grayscale numpy array (unicode-path safe via np.fromfile)."""
+    import cv2
+    import numpy as np
+    img = cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise ValueError("cv2 could not decode")
+    return img
+
+
+def scale_aware_sharpness(gray):
+    """Laplacian variance on a fixed-size (512px-long) downscale -> comparable across resolutions."""
+    import cv2
+    import numpy as np
+    h, w = gray.shape
+    nw, nh = analysis_resize_dims(w, h)
+    small = cv2.resize(gray, (nw, nh), interpolation=cv2.INTER_AREA) if (nw, nh) != (w, h) else gray
+    return float(cv2.Laplacian(small.astype(np.float64), cv2.CV_64F).var())
+
+
+def jpeg_qtable_luma(path):
+    """Luminance quant table (list of 64) for a JPEG, else None (PNG/etc)."""
+    from PIL import Image
+    try:
+        with Image.open(path) as im:
+            q = getattr(im, "quantization", None)
+        return list(q[0]) if q and 0 in q else None
+    except Exception:
+        return None
+
+
+def metrics_for(path, w, h):
+    """All quality metrics for one image (already known to be >= floor + readable)."""
+    gray = _to_gray(path)
+    return {
+        "sharp": scale_aware_sharpness(gray),
+        "fft_hf": fft_highfreq_ratio(gray),
+        "blockiness": blockiness(gray),
+        "jpeg_q": jpeg_quality_estimate(jpeg_qtable_luma(path)),
+    }
+
+
+def quality_reject(m):
+    """Return a drop_reason string if any quality gate fails, else ''."""
+    if m["sharp"] < SHARP_MIN:
+        return f"soft(sharp={m['sharp']:.0f})"
+    if m["fft_hf"] < FFT_MIN:
+        return f"upscaled(fft={m['fft_hf']:.3f})"
+    if m["jpeg_q"] < JPEG_Q_MIN:
+        return f"compressed(q={m['jpeg_q']})"
+    if m["blockiness"] > BLOCK_MAX:
+        return f"blocky({m['blockiness']:.1f})"
+    return ""
+
+
+def _dedup_local(items, threshold):
+    """Greedy near-dup grouping on precomputed phashes; keep highest-px per group."""
+    keep, used = [], set()
+    for i in range(len(items)):
+        if i in used:
+            continue
+        group = [i]
+        for j in range(i + 1, len(items)):
+            if j not in used and (items[i]["phash"] - items[j]["phash"]) <= threshold:
+                group.append(j)
+        used.update(group)
+        keep.append(items[max(group, key=lambda k: items[k]["px"])])
+    return keep
+
+
+def _load_stage1():
+    import importlib.util
+    here = Path(__file__).resolve().parent
+    if str(here) not in sys.path:
+        sys.path.insert(0, str(here))
+    spec = importlib.util.spec_from_file_location("ingest1", here / "01_ingest_clean.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _gather(s1):
+    """Floor + readability + phash, returning survivor items (pre-dedup, pre-quality)."""
+    common = s1.common
+    items, skipped = [], 0
+    for p in common.iter_images(RAW):
+        try:
+            if s1.is_corrupt(p):
+                continue
+            w, h = s1.image_size(p)
+            if min(w, h) < MIN_SHORT:
+                continue
+            ph = s1.phash(p)
+        except Exception as e:
+            print(f"  skip (unreadable) {p.name}: {e}")
+            skipped += 1
+            continue
+        items.append({"path": p, "phash": ph, "w": w, "h": h, "px": w * h})
+    return items, skipped
+
+
+def calibrate(n):
+    """Sample n survivors, print metric percentiles to pick thresholds. Writes nothing."""
+    import numpy as np
+    s1 = _load_stage1()
+    items, _ = _gather(s1)
+    step = max(1, len(items) // n)
+    sample = items[::step][:n]
+    cols = {"sharp": [], "fft_hf": [], "blockiness": [], "jpeg_q": []}
+    for it in sample:
+        try:
+            m = metrics_for(it["path"], it["w"], it["h"])
+        except Exception as e:
+            print(f"  skip {it['path'].name}: {e}")
+            continue
+        for k in cols:
+            cols[k].append(m[k])
+    print(f"\ncalibration on {len(cols['sharp'])} sampled images (of {len(items)} survivors >= {MIN_SHORT}px):")
+    for k, vals in cols.items():
+        a = np.array(vals, dtype=float)
+        pcts = {p: float(np.percentile(a, p)) for p in (5, 10, 25, 50, 75, 90, 95)}
+        print(f"  {k:11s} min={a.min():.3f} " + " ".join(f"p{p}={pcts[p]:.3f}" for p in pcts) + f" max={a.max():.3f}")
+    print("\nSet SHARP_MIN / FFT_MIN / JPEG_Q_MIN / BLOCK_MAX in v10_curate.py from these, then run without --calibrate.")
+
+
+def main():
+    import shutil
+    from PIL import Image
+    if len(sys.argv) >= 3 and sys.argv[1] == "--calibrate":
+        calibrate(int(sys.argv[2]))
+        return
+
+    s1 = _load_stage1()
+    common = s1.common
+    if CLEAN.exists():
+        shutil.rmtree(CLEAN)
+    CLEAN.mkdir(parents=True, exist_ok=True)
+
+    items, skipped = _gather(s1)
+    kept_items = _dedup_local(items, HAMMING)
+
+    rows, kept, dropped = [], 0, 0
+    for it in kept_items:
+        p, w, h = it["path"], it["w"], it["h"]
+        try:
+            m = metrics_for(p, w, h)
+        except Exception as e:
+            print(f"  skip (metric fail) {p.name}: {e}")
+            skipped += 1
+            continue
+        reason = quality_reject(m)
+        if reason:
+            rows.append({"path": str(p).replace("\\", "/"), "width": str(w), "height": str(h),
+                         "phash": str(it["phash"]), "sharp": f"{m['sharp']:.1f}",
+                         "fft_hf": f"{m['fft_hf']:.4f}", "jpeg_q": str(m["jpeg_q"]),
+                         "blockiness": f"{m['blockiness']:.2f}", "dropped": "True", "drop_reason": reason})
+            dropped += 1
+            continue
+        try:
+            im = Image.open(p).convert("RGB")
+            box = ar_crop_box(w, h)
+            if box != (0, 0, w, h):
+                im = im.crop(box)
+            dest = CLEAN / f"{p.stem}.jpg"
+            im.save(dest, quality=95)
+        except Exception as e:
+            print(f"  skip (save failed) {p.name}: {e}")
+            skipped += 1
+            continue
+        cw, ch = im.size
+        rows.append({"path": str(dest).replace("\\", "/"), "width": str(cw), "height": str(ch),
+                     "phash": str(it["phash"]), "sharp": f"{m['sharp']:.1f}",
+                     "fft_hf": f"{m['fft_hf']:.4f}", "jpeg_q": str(m["jpeg_q"]),
+                     "blockiness": f"{m['blockiness']:.2f}", "dropped": "False", "drop_reason": ""})
+        kept += 1
+
+    common.write_manifest(MANIFEST, rows)
+    print(f"v10 curate: kept {kept}, quality-dropped {dropped}, skipped {skipped} -> {CLEAN}")
+    print(f"manifest -> {MANIFEST}  (next: python src/v10_caption.py)")
+
+
+if __name__ == "__main__":
+    main()

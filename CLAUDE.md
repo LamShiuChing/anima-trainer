@@ -1,17 +1,59 @@
 # CLAUDE.md — Anima Realism finetune project
 
 > Portable project memory. Lives in the project folder so it survives moving to another drive.
-> **CURRENT = V8 TRAINED — keeper = `v8_epoch10.safetensors` (great, still climbing). Instance destroyed. NEXT = v9
-> (fix messy backgrounds = DATA gap, + more style epochs), warm-start ep10.** v8 warm-started `V7_epoch17.safetensors`
-> (on-disk best; record had labeled the eval-winner "ep18"). Spec: `docs/superpowers/specs/2026-06-04-anima-realism-v8-fidelity-refiner-design.md`;
-> plan: `docs/superpowers/plans/2026-06-04-anima-realism-v8-fidelity-refiner.md`; eval: `docs/superpowers/specs/2026-06-04-v8-eval-prompts.md`.
+> **CURRENT = V10 BUILT (code done, NOT trained) — clean RESTART. Photoreal render-style finetune that PRESERVES the
+> base's concept/character knowledge. Warm-start BASE DiT, gentle lr 6e-6, 50ep save-every-5, pick-best on a
+> concept-retention eval.** Spec: `docs/superpowers/specs/2026-06-06-anima-realism-v10-design.md`; plan:
+> `docs/superpowers/plans/2026-06-06-anima-realism-v10.md`; eval: `docs/superpowers/specs/2026-06-06-v10-eval-prompts.md`.
+> (Prior: V8 trained, keeper `v8_epoch10.safetensors`; v9 background-plan superseded by v10.) v8 specs:
+> `docs/superpowers/specs/2026-06-04-anima-realism-v8-fidelity-refiner-design.md`.
 > V7 captioning spec: `docs/superpowers/specs/2026-06-03-anima-realism-v7-captioning-design.md`.
 > Prompt guide: `docs/v7-prompt-guide.md`. History: v5 (`2026-06-02-...v5-design.md`), v6 probe, v2/LoRA (abandoned).
+
+## Status (2026-06-06) — V10 BUILT (code complete, NOT trained yet). Clean restart, new philosophy.
+
+**V10 = photoreal RENDER-STYLE finetune that PRESERVES base concepts** (different goal from v5–v9, which tried to
+*erase* the anime prior). User reframed: output = 100% photoreal, but keep the base's concept/character *knowledge*
+(prompt a known concept → get it rendered as a photo). Branch `v5-build`. **Code done + committed; pipeline NOT run,
+not trained.**
+
+**Recipe (all locked with user):**
+- **Warm-start BASE** `anima-base-v1.0.safetensors` (max concept knowledge; v8 ep10 already drifted over 4 photo gens).
+- **Data = `data/raw`** (6396 readable), floor **1280** short side (~2699 candidates pre-gate) → train **1536**.
+- **NEW curation `src/v10_curate.py`** — measures REAL high-freq detail, not pixels (a 6k upscale can be soft; a 1.3k
+  photo can be sharp). Gates: scale-aware sharpness (Laplacian on a 512px copy) + **FFT high-freq energy ratio** (the
+  fake-big/upscale killer) + JPEG quant-table quality + 8×8 blockiness + phash dedup + AR-crop 0.66–1.5. Emits ALL
+  metrics to `data/v10_manifest.csv`; `--calibrate N` prints percentiles. ⚠️ **Thresholds (`SHARP_MIN/FFT_MIN/
+  JPEG_Q_MIN/BLOCK_MAX`) are placeholders (0/0/0/1e9) until CALIBRATED** from the real distribution (Task 4, user-run).
+  Note: `blockiness` is *negative* for clean photos (compressed pushes it up); raw JPEGs ~q90 so real filtering = sharp+fft.
+- **Captions `src/v10_caption.py`** = `masterpiece, best quality, score_7, <rating>, <RAM++ tags>`. **RAM++** =
+  real-photo tagger (NOT booru/anime WD14, NOT Gemini, NO realism anchor). Base quality tokens reuse the base's strongest
+  priors (free inference dial). Falconsai = rating; **WD14 kept ONLY as the underage drop-gate** (legal, non-negotiable;
+  tags discarded). ⚠️ tradeoff: tag-only underuses the Qwen3 LLM TE (re-add a short NL caption next run if mushy);
+  RAM++ weak on explicit NSFW detail. Build = **reuse `src/04_build_dataset.py`** (path-driven via pipeline.yaml).
+- **Train** `outputs/anima_realism_ft_v10_train_config.toml`: base warm-start, **lr 6e-6**, **50 epochs**,
+  **save_every_n_epochs=5** (10 ckpts ~42GB), adamw_optimi fp32, freeze Qwen3 (`llm_adapter_lr=0`), full-FT (no [adapter]),
+  AR 0.66–1.5. `scripts/run_v10_train.sh` + `scripts/vast_fetch_v10.sh` (dataset only — base DiT comes from vast_setup.sh).
+- **Concept preservation lever = pick-best epoch, NOT low LR.** Two frozen eval sets (`...v10-eval-prompts.md`): photoreal
+  (should climb) + concept-retention (base-native `masterpiece,best quality,score_7,safe,<concept>` prompts) → pick the
+  last epoch where concepts still render AND photoreal is strong.
+
+**Anima HF facts (read 2026-06-06, drove v10):** base trained on anime + ~800k non-anime *artistic* images **with photos
+FILTERED OUT** → zero photographic prior → photoreal is a real shift (50ep justified). Authors: keep LLM adapter LR=0;
+model needs a **"light touch" due to existing diversity** (= the concepts we keep). Base-native prompt = booru/score
+(`masterpiece, best quality, score_7, safe, [char] [tags]`). Author infer: steps 30–50, **CFG 4–5**, sampler `er_sde`/
+`euler_a`/`dpmpp_2m_sde_gpu`, scheduler `beta57`, res ≤1536 — matches our prior low-CFG finding.
+
+**NEXT (user-run runtime, local 4080 then Vast):** (1) `python src/v10_curate.py --calibrate 200` → set thresholds →
+full curate. (2) `pip install git+...recognize-anything` + download `ram_plus_swin_large_14m.pth` → `python
+src/v10_caption.py`. (3) `python src/04_build_dataset.py` → zip `data/v10_dataset` → Drive. (4) Rent 96GB Vast →
+`vast_setup.sh` → `vast_fetch_v10.sh <ID>` → `run_v10_train.sh` → eval ep5..50 → DOWNLOAD pick-best + log BEFORE destroy.
 
 ## Goal
 
 Make the **Anima** diffusion model (anime base; Qwen3-0.6B TE + Qwen-Image VAE) output **realistic photos** —
 a domain shift fought against the anime prior. Community realism finetunes of Anima exist on Civitai, so it works.
+**(v10 reframe: keep the base's concept/character *knowledge*, change only the *render style* to photoreal.)**
 
 - **Current = v5:** full finetune (not LoRA) **from base DiT at 1024**, on a rented **Vast.ai A100-80GB**,
   via **diffusion-pipe**, on ~1942 Gemini-captioned sharp photos. (LoRA on local 4080 abandoned: 16GB can't fit a

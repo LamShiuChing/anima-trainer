@@ -15,7 +15,10 @@ pip install -q gdown
 gdown "$DATASET_ID" -O "$BASE/data/dataset.zip"
 rm -rf "$BASE/data/_stage" "$BASE/data/dataset" "$BASE/data/char"
 mkdir -p "$BASE/data/_stage"
-unzip -q -o "$BASE/data/dataset.zip" -d "$BASE/data/_stage"
+# unzip returns exit 1 on harmless warnings (e.g. CJK filename local/central mismatch) -> tolerate it
+# (set -e would otherwise abort the script before the files are moved). Only exit >=2 is a real error.
+set +e; unzip -q -o "$BASE/data/dataset.zip" -d "$BASE/data/_stage"; rc=$?; set -e
+[ "$rc" -le 1 ] || { echo "unzip failed (exit $rc)"; exit 1; }
 
 # zip bundles top-level folders dataset/ (+ optional char/). Place each as its own diffusion-pipe dir.
 [ -d "$BASE/data/_stage/dataset" ] || { echo "zip has no dataset/ folder -> wrong archive (rebuild with scripts/v10_zip.py)"; exit 1; }

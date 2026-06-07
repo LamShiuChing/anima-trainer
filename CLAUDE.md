@@ -1,10 +1,14 @@
 # CLAUDE.md — Anima Realism finetune project
 
 > Portable project memory. Lives in the project folder so it survives moving to another drive.
-> **CURRENT = V10 TRAINING LIVE on Vast (2026-06-07) — clean RESTART. Photoreal render-style finetune that PRESERVES
-> the base's concept/character knowledge + embeds a trigger-word character (`rrr`, oversampled). Warm-start BASE DiT,
-> gentle lr 6e-6, 50ep save-every-5, pick-best on concept-retention eval + `rrr` trigger test. Captions = GEMINI-ONLY
-> structured (quality+rating+enums+tags+paragraph). DOWNLOAD best ckpt + log BEFORE destroy.** Spec: `docs/superpowers/specs/2026-06-06-anima-realism-v10-design.md`; plan:
+> **CURRENT = V10 SUCCESS (2026-06-07) — keeper ≈ `ep10` (preserves concepts + photoreal + `rrr` char). Clean RESTART.
+> Photoreal render-style full-FT, warm-start BASE DiT, lr 6e-6, 50ep save-every-5, GEMINI-ONLY structured captions.**
+> ⚠️ **The "70% forgotten" scare = PROMPTING, not the model.** Concept recall needs: exact Danbooru names (`hatsune_miku`,
+> `rem_(re:zero)`) + series tag + iconic feature/outfit tags (component tags survive better than name-binding) + a
+> CLEAN negative (anime/illustration/cartoon in the negative DELETES anime characters). ep10>ep15 on retention
+> (erosion starts ep1; on 100%-photo full-FT no epoch gives full-both — pick the knee). DOWNLOAD ep5/10/15 + log; stop
+> the run once a keeper's picked (later epochs erode concepts for marginal photo gain; small-detail weakness is
+> resolution-bound = inference detailers, not epochs). Fuller preservation → v11 (mixed/reg data + style-anchor captions). Spec: `docs/superpowers/specs/2026-06-06-anima-realism-v10-design.md`; plan:
 > `docs/superpowers/plans/2026-06-06-anima-realism-v10.md`; eval: `docs/superpowers/specs/2026-06-06-v10-eval-prompts.md`.
 > (Prior: V8 trained, keeper `v8_epoch10.safetensors`; v9 background-plan superseded by v10.) v8 specs:
 > `docs/superpowers/specs/2026-06-04-anima-realism-v8-fidelity-refiner-design.md`.

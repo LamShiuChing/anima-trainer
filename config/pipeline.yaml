@@ -17,32 +17,14 @@ ingest:
   drop_blurry: true              # v5: drop blur_var < threshold (tuned 2026-06-02)
   run_ocr_flag: false
 
-caption:                         # v7: WD14 (EVA02) tags + Gemini expanded enum vocab + booru rating + rich NL
-  nsfw_model: Falconsai/nsfw_image_detection
-  nsfw_label_map:                  # v7: Falconsai is the FALLBACK rating (used only when Gemini emits none)
-    NORMAL: rating:general
-    NSFW: rating:explicit
-  nsfw_default_tag: rating:general
-  block_tags: [loli, shota, toddlercon, child, baby, infant, toddler, aged_down]  # underage HARD-BLOCK (legal, non-negotiable)
-  wd_model_name: EVA02_Large       # v7: bigger/more-detailed tagger (was SwinV2_v3); key for Gemini-refused NSFW
-  wd_general_threshold: 0.25       # v7: lower threshold -> more tags (more detail; more noise). was 0.35
-  gemini:
-    model: gemini-2.5-flash-lite     # cheapest vision model w/ free tier (2.0-flash-lite deprecated 2026-06-01)
-    safety_block_none: true          # BLOCK_NONE on the 4 adjustable categories; child-safety always on (Google core)
-    max_output_tokens: 450           # v7: richer head-to-toe NL (was 256)
-    max_retries: 4
-    concurrency: 12                  # parallel Gemini calls. Free tier (~15 RPM): lower to ~4. Paid tier 1+: raise to 20-50. 429s self-throttle via backoff.
-    cache_file: data/gemini_cache.json
-  ram:                                   # v10: RAM++ real-photo tagger (replaces booru WD14 for captions)
-    checkpoint: models/ram_plus_swin_large_14m.pth   # from HF xinyu1205/recognize-anything-plus-model
-    image_size: 384
-    quality_prefix: "masterpiece, best quality, score_7"   # base-native quality tokens (curated = all sharp)
-  nl:                                    # v10: Gemini NL caption (ported from lenstag-ai) appended after RAM++ tags
-    model: gemini-3-flash-preview        # lenstag's model; falls back if unavailable (see v10_caption_nl.py)
+caption:                         # v10: GEMINI-ONLY structured caption (no RAM++/WD14/Falconsai/underage gate).
+  nl:                                    # one structured Gemini call -> enums + tags + NL paragraph (src/v10_caption_gemini.py)
+    model: gemini-3-flash-preview        # the user's lenstag-ai model
     concurrency: 8                       # thread pool; raise on paid tier, lower to ~4 on free (15 RPM)
-    max_output_tokens: 300               # ~50-100 word paragraph
-    cache_file: data/v10_nl_cache.json   # resumable: image path -> NL (never re-bill on rerun)
-    block_none: true                     # BLOCK_NONE safety on the 4 adjustable cats (NSFW captioning)
+    max_output_tokens: 800               # JSON: enums + ~25 tags + 50-100 word paragraph
+    cache_file: data/v10_caption_cache.json   # resumable: image path -> raw Gemini JSON (never re-bill on rerun)
+    block_none: true                     # BLOCK_NONE on the 4 adjustable cats (captions NSFW)
+    quality_prefix: "masterpiece, best quality"   # base-native quality tokens lead every caption (no score_7)
 
 dataset:
   min_resolution: 1280            # v10: floor (curate already gated; build backstop). <1280 upscales too hard at 1536

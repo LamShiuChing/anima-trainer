@@ -86,9 +86,31 @@ class UnderageGate:
         return ", ".join(general.keys())
 
 
+def _prep_ram_imports():
+    """Make RAM importable in a modern env (inference only; we never train via RAM/timm/wandb):
+    1. RAM's bundled BERT imports apply_chunking_to_forward / find_pruneable_heads_and_indices /
+       prune_linear_layer from transformers.modeling_utils, but newer transformers moved them to
+       transformers.pytorch_utils -> re-expose them (avoids downgrading transformers, which
+       Falconsai + WD14/EVA02 depend on).
+    2. RAM pulls in timm, whose timm.utils.summary does `import wandb` at module load. A broken
+       wandb (protobuf mismatch) would crash the import -> stub wandb (unused at inference)."""
+    import sys
+    import types
+    import transformers.modeling_utils as mu
+    try:
+        import transformers.pytorch_utils as pu
+        for name in ("apply_chunking_to_forward", "find_pruneable_heads_and_indices", "prune_linear_layer"):
+            if not hasattr(mu, name) and hasattr(pu, name):
+                setattr(mu, name, getattr(pu, name))
+    except ImportError:
+        pass
+    sys.modules["wandb"] = types.ModuleType("wandb")   # force a stub (v10 never logs to wandb)
+
+
 class RAMTagger:
     """RAM++ (Recognize Anything Plus) real-photo tagger. Pipe-delimited english tags -> list."""
     def __init__(self, cfg, device="cuda"):
+        _prep_ram_imports()
         from ram.models import ram_plus
         from ram import get_transform, inference_ram
         c = cfg["caption"]["ram"]

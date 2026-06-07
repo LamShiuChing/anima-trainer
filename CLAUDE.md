@@ -1,9 +1,10 @@
 # CLAUDE.md — Anima Realism finetune project
 
 > Portable project memory. Lives in the project folder so it survives moving to another drive.
-> **CURRENT = V10 BUILT (code done, NOT trained) — clean RESTART. Photoreal render-style finetune that PRESERVES the
-> base's concept/character knowledge. Warm-start BASE DiT, gentle lr 6e-6, 50ep save-every-5, pick-best on a
-> concept-retention eval.** Spec: `docs/superpowers/specs/2026-06-06-anima-realism-v10-design.md`; plan:
+> **CURRENT = V10 TRAINING LIVE on Vast (2026-06-07) — clean RESTART. Photoreal render-style finetune that PRESERVES
+> the base's concept/character knowledge + embeds a trigger-word character (`rrr`, oversampled). Warm-start BASE DiT,
+> gentle lr 6e-6, 50ep save-every-5, pick-best on concept-retention eval + `rrr` trigger test. Captions = GEMINI-ONLY
+> structured (quality+rating+enums+tags+paragraph). DOWNLOAD best ckpt + log BEFORE destroy.** Spec: `docs/superpowers/specs/2026-06-06-anima-realism-v10-design.md`; plan:
 > `docs/superpowers/plans/2026-06-06-anima-realism-v10.md`; eval: `docs/superpowers/specs/2026-06-06-v10-eval-prompts.md`.
 > (Prior: V8 trained, keeper `v8_epoch10.safetensors`; v9 background-plan superseded by v10.) v8 specs:
 > `docs/superpowers/specs/2026-06-04-anima-realism-v8-fidelity-refiner-design.md`.
@@ -53,17 +54,30 @@ model needs a **"light touch" due to existing diversity** (= the concepts we kee
 (`masterpiece, best quality, score_7, safe, [char] [tags]`). Author infer: steps 30–50, **CFG 4–5**, sampler `er_sde`/
 `euler_a`/`dpmpp_2m_sde_gpu`, scheduler `beta57`, res ≤1536 — matches our prior low-CFG finding.
 
-**PROGRESS (2026-06-06): curate DONE (2069 kept), Gemini caption layer BUILT + smoke-verified (rich captions).
-Trigger-word CHARACTER embed wired:** 42 AI-gen char imgs (`data/r`) staged to `data/v10_char/` (trigger
-`reiko`→`rrr`, AR-cropped to fit 0.66–1.5) → oversampled as a 2nd `[[directory]]` (`num_repeats 4`) via
-`scripts/v10_stage_char.py` + `04_build_dataset` extra_dirs + `v10_zip.py`/`vast_fetch_v10.sh` (bundle
-`dataset/` + `char/`). No separate LoRA — embedded in the full-FT. ⚠️ eyeball the 20 cropped char imgs (tall
-ones may clip head/feet). Char captions are booru-style + lead with `rrr` (not the v10 enum format — fine for a trigger).
-**NEXT (user-run runtime, local 4080 then Vast):** (1) ✅ curate done (`data/v10_clean`, 2069). (2) `python
-src/v10_caption_gemini.py` (Gemini structured caption; resumable cache; uses GEMINI_API_KEY). (3) `python
-src/04_build_dataset.py` → `python scripts/v10_zip.py` → upload `data/v10_dataset.zip` to Drive. (4) Rent 96GB Vast →
-`vast_setup.sh` → `vast_fetch_v10.sh <ID>` → `run_v10_train.sh` → eval ep5..50 → DOWNLOAD pick-best + log BEFORE destroy.
-⚠️ Must `git push origin v5-build` before the Vast clone (v10 code is local-only until pushed).
+**PROGRESS (2026-06-07): TRAINING LIVE on Vast.** Full local prep done + launched:
+- **curate:** 2069 kept (6457 raw → floor 1280 + dedup → 2881 → quality gates dropped 812: soft 310/blocky 270/
+  compressed 117/upscaled 115). Calibrated thresholds: SHARP_MIN 190, FFT_MIN 0.52, JPEG_Q_MIN 70, BLOCK_MAX 1.6.
+- **caption:** 2069 Gemini structured (3 refused→defaults). quality spread: high 1623 / masterpiece 172 / best 138 /
+  normal 130 / low 6. rating spread: suggestive 1223 / safe 477 / explicit 369.
+- **character embed:** 42 AI-gen imgs (`data/r`) → `data/v10_char/` (trigger `reiko`→`rrr`, 20 AR-cropped to fit
+  0.66–1.5) → oversampled 2nd `[[directory]]` `num_repeats 4`. No separate LoRA. ⚠️ char captions booru-style
+  (`rrr, 1girl, ...`) not the v10 enum format — fine for a trigger. ⚠️ eyeball the 20 cropped (tall may clip head/feet).
+- **dataset.zip** = 2.3 GB combined (`dataset/` 2069 + `char/` 42). **Drive ID (combined, use this): `1jOGml7awyvDkHs_m5Hk3VVTPhGhzt94i`**;
+  a separate char-only `1IQRu7o7KB4h8n6AfktP8m5vUyRuN06FE` exists but is REDUNDANT (combined already has char).
+- Pushed `v5-build` (origin head 65771be). Train running: base warm-start, lr 6e-6, 50ep, save-5.
+
+**Deploy gotchas hit + FIXED (all script/path, no data damage):**
+- **`unzip` returns exit 1 on harmless warnings** (CJK filenames — some sources named `下載-…`; local-vs-central header
+  encoding mismatch, extracts fine via central name → pairs still match). `set -euo pipefail` aborted the fetch before
+  the `mv`. Fixed `vast_fetch_v10.sh` to tolerate unzip exit ≤1.
+- **`run_v10_train.sh` hardcoded `/workspace/anima/repo`** (wrong — clone is elsewhere). Fixed to self-locate via
+  `BASH_SOURCE` (same as the v9 fix). **Lesson: re-clone fresh on Vast after every push; stale clones cause phantom errors.**
+- `gdown` on the 2.3 GB zip: bare ID is fine; if it returns the virus-scan page use `--fuzzy`.
+
+**NEXT:** eval ckpts ep5,10…50 in ComfyUI (`docs/.../2026-06-06-v10-eval-prompts.md`): photoreal climb + concept
+retention + **test `rrr` trigger** (`masterpiece, safe, rrr, <pose>`). Pick best (photoreal strong AND concepts intact
+AND `rrr` renders). **DOWNLOAD best ckpt + `train_v10.log` BEFORE destroying.** Infer: CFG 4–5, steps 30–50,
+`er_sde`/`euler_a`, `beta57`, res ≤1536. Measure epoch-1 time → extrapolate 50ep cost; destroy on finish.
 
 ## Goal
 

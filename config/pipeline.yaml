@@ -34,6 +34,8 @@ dataset:
   num_ar_buckets: 7
   num_repeats: 1
   min_blur_var: 0.0
+  char_dir_local: data/v10_char   # v10: trigger-word character set (already captioned; bypasses curate/caption)
+  char_num_repeats: 4             # oversample factor -> /workspace/anima/data/char as a 2nd [[directory]]
 
 finetune:
   base_dir: /workspace/anima

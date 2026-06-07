@@ -49,10 +49,13 @@ def write_pair(img_path, caption, dest_dir):
     (dest_dir / (img_path.stem + ".txt")).write_text(caption, encoding="utf-8")
 
 
-def write_dataset_toml(out_path, image_dir, resolutions, min_ar, max_ar, num_ar_buckets, num_repeats):
+def write_dataset_toml(out_path, image_dir, resolutions, min_ar, max_ar, num_ar_buckets, num_repeats,
+                       extra_dirs=None):
     """diffusion-pipe dataset config. frame_buckets=[1] => image-only.
     diffusion-pipe resizes each image to the target AREA (upscaling smaller ones);
-    no per-image no-upscale flag exists, hence the low default resolution in pipeline.yaml."""
+    no per-image no-upscale flag exists, hence the low default resolution in pipeline.yaml.
+    extra_dirs: optional list of (path, num_repeats) for oversampled add-on sets (e.g. a
+    trigger-word character set) -> emitted as additional [[directory]] blocks."""
     image_dir = str(image_dir).replace("\\", "/")
     res_list = ", ".join(str(r) for r in resolutions)
     toml = f"""# diffusion-pipe dataset config (Anima full finetune, images only)
@@ -66,6 +69,12 @@ frame_buckets = [1]
 [[directory]]
 path = '{image_dir}'
 num_repeats = {num_repeats}
+"""
+    for path, repeats in (extra_dirs or []):
+        toml += f"""
+[[directory]]
+path = '{str(path).replace(chr(92), "/")}'
+num_repeats = {repeats}
 """
     Path(out_path).write_text(toml, encoding="utf-8")
 
@@ -98,14 +107,24 @@ def main():
     fcfg = cfg["finetune"]
     base = fcfg["base_dir"].rstrip("/")
     vast_dataset_dir = f"{base}/data/dataset"   # where the dataset lives ON Vast
+    # optional oversampled add-on (trigger-word character set) -> a 2nd [[directory]] on Vast
+    extra_dirs = []
+    char_local = ds.get("char_dir_local")
+    if char_local and Path(char_local).is_dir() and any(Path(char_local).glob("*.txt")):
+        n_char = len(list(Path(char_local).glob("*.txt")))
+        extra_dirs.append((f"{base}/data/char", ds.get("char_num_repeats", 1)))
+        LOG.info("Stage 4: + character set %s (%d pairs) -> /data/char num_repeats=%s",
+                 char_local, n_char, ds.get("char_num_repeats", 1))
     toml_path = Path(cfg["paths"]["outputs"]) / f"{fcfg['project_name']}_dataset_config.toml"
     toml_path.parent.mkdir(parents=True, exist_ok=True)
     write_dataset_toml(
         toml_path, image_dir=vast_dataset_dir,
         resolutions=ds["resolutions"], min_ar=ds["min_ar"], max_ar=ds["max_ar"],
         num_ar_buckets=ds["num_ar_buckets"], num_repeats=ds["num_repeats"],
+        extra_dirs=extra_dirs,
     )
-    LOG.info("Stage 4 done. dataset.toml -> %s (image_dir=%s)", toml_path, vast_dataset_dir)
+    LOG.info("Stage 4 done. dataset.toml -> %s (image_dir=%s, extra_dirs=%s)",
+             toml_path, vast_dataset_dir, extra_dirs)
 
 
 if __name__ == "__main__":

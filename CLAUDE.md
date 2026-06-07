@@ -26,23 +26,25 @@ not trained.**
   metrics to `data/v10_manifest.csv`; `--calibrate N` prints percentiles. ⚠️ **Thresholds (`SHARP_MIN/FFT_MIN/
   JPEG_Q_MIN/BLOCK_MAX`) are placeholders (0/0/0/1e9) until CALIBRATED** from the real distribution (Task 4, user-run).
   Note: `blockiness` is *negative* for clean photos (compressed pushes it up); raw JPEGs ~q90 so real filtering = sharp+fft.
-- **Captions** = `masterpiece, best quality, score_7, <rating>, <RAM++ tags>, <Gemini NL paragraph>`. Two stages:
-  - `src/v10_caption.py` (stage 3): **RAM++** real-photo tagger (NOT booru/anime WD14, NOT anchor) + base quality
-    tokens (reuse base priors, free inference dial) + Falconsai rating; **WD14 kept ONLY as the underage drop-gate**
-    (legal, non-negotiable; tags discarded). Writes `caption` (= quality+rating+tags).
-  - `src/v10_caption_nl.py` (stage 3b): **Gemini NL paragraph appended** (ported from the user's `lenstag-ai` app:
-    gemini-3-flash-preview, "detailed literal caption — subject/composition/lighting/colors/textures/mood/technical",
-    50–100 words). Fixes tag-only being too simple (RAM++ alone = flat keyword bag → underuses Qwen3 LLM TE). REUSES
-    the RAM++ run (snapshots `caption_tags`, rebuilds `caption = tags + NL`; idempotent). Thread pool + resumable
-    cache (`data/v10_nl_cache.json`). **BLOCK_NONE → captions NSFW fine** (verified; ~45% of set is explicit).
-    ⚠️ Gemini 3 = THINKING model → `ThinkingConfig(thinking_budget=0)` or thinking tokens truncate the caption.
-  - Build = **reuse `src/04_build_dataset.py`** (path-driven). Re-run build + re-zip after stage 3b.
+- **Captions = GEMINI-ONLY structured** (`src/v10_caption_gemini.py`). One `gemini-3-flash-preview` call per image
+  (`response_schema` JSON) returns three layers: the **v7 enum rubric** (real-photo subset: shot_type/view/
+  camera_angle/capture_style/lighting/condition/color_grade/camera_lens/depth_of_field/expression/body_type/
+  breast_size/ethnicity/skin_tone/setting_type) + a **real-photo tag list** + a **50–100 word NL paragraph**.
+  Assembled = `masterpiece, best quality, <rating>, <enums>, <tags>[, watermark], <paragraph>`. Prompt/structure
+  adapted from the user's **lenstag-ai** app + the v7 rubric. **RAM++, WD14, Falconsai all DROPPED** (RAM++ = noisy flat
+  keywords; WD14 underage gate = anime tagger that false-positives on real adult photos and isn't a real-photo minor
+  detector → removed on the owner's assertion the set is all legal adults). **rating = simple `safe`/`suggestive`/
+  `explicit`** (no `rating:` prefix; REQUIRED in schema). **`score_7` dropped** from the quality prefix.
+  **BLOCK_NONE → captions NSFW fine** (verified; ~45% explicit). ⚠️ Gemini 3 = THINKING model →
+  `ThinkingConfig(thinking_budget=0)` or thinking tokens truncate the JSON. Thread pool + resumable cache
+  (`data/v10_caption_cache.json`, path→raw JSON), idempotent rebuild. Build = **reuse `src/04_build_dataset.py`**;
+  re-run build + `scripts/v10_zip.py` after captioning.
 - **Train** `outputs/anima_realism_ft_v10_train_config.toml`: base warm-start, **lr 6e-6**, **50 epochs**,
   **save_every_n_epochs=5** (10 ckpts ~42GB), adamw_optimi fp32, freeze Qwen3 (`llm_adapter_lr=0`), full-FT (no [adapter]),
   AR 0.66–1.5. `scripts/run_v10_train.sh` + `scripts/vast_fetch_v10.sh` (dataset only — base DiT comes from vast_setup.sh).
 - **Concept preservation lever = pick-best epoch, NOT low LR.** Two frozen eval sets (`...v10-eval-prompts.md`): photoreal
-  (should climb) + concept-retention (base-native `masterpiece,best quality,score_7,safe,<concept>` prompts) → pick the
-  last epoch where concepts still render AND photoreal is strong.
+  (should climb) + concept-retention (`masterpiece, best quality, safe, <concept>` prompts) → pick the last epoch where
+  concepts still render AND photoreal is strong.
 
 **Anima HF facts (read 2026-06-06, drove v10):** base trained on anime + ~800k non-anime *artistic* images **with photos
 FILTERED OUT** → zero photographic prior → photoreal is a real shift (50ep justified). Authors: keep LLM adapter LR=0;
@@ -50,10 +52,12 @@ model needs a **"light touch" due to existing diversity** (= the concepts we kee
 (`masterpiece, best quality, score_7, safe, [char] [tags]`). Author infer: steps 30–50, **CFG 4–5**, sampler `er_sde`/
 `euler_a`/`dpmpp_2m_sde_gpu`, scheduler `beta57`, res ≤1536 — matches our prior low-CFG finding.
 
-**NEXT (user-run runtime, local 4080 then Vast):** (1) `python src/v10_curate.py --calibrate 200` → set thresholds →
-full curate. (2) `pip install git+...recognize-anything` + download `ram_plus_swin_large_14m.pth` → `python
-src/v10_caption.py`. (3) `python src/04_build_dataset.py` → zip `data/v10_dataset` → Drive. (4) Rent 96GB Vast →
+**PROGRESS (2026-06-06): curate DONE (2069 kept), Gemini caption layer BUILT + smoke-verified (rich captions).**
+**NEXT (user-run runtime, local 4080 then Vast):** (1) ✅ curate done (`data/v10_clean`, 2069). (2) `python
+src/v10_caption_gemini.py` (Gemini structured caption; resumable cache; uses GEMINI_API_KEY). (3) `python
+src/04_build_dataset.py` → `python scripts/v10_zip.py` → upload `data/v10_dataset.zip` to Drive. (4) Rent 96GB Vast →
 `vast_setup.sh` → `vast_fetch_v10.sh <ID>` → `run_v10_train.sh` → eval ep5..50 → DOWNLOAD pick-best + log BEFORE destroy.
+⚠️ Must `git push origin v5-build` before the Vast clone (v10 code is local-only until pushed).
 
 ## Goal
 

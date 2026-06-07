@@ -37,6 +37,12 @@ caption:                         # v7: WD14 (EVA02) tags + Gemini expanded enum 
     checkpoint: models/ram_plus_swin_large_14m.pth   # from HF xinyu1205/recognize-anything-plus-model
     image_size: 384
     quality_prefix: "masterpiece, best quality, score_7"   # base-native quality tokens (curated = all sharp)
+  nl:                                    # v10: Gemini NL caption (ported from lenstag-ai) appended after RAM++ tags
+    model: gemini-3-flash-preview        # lenstag's model; falls back if unavailable (see v10_caption_nl.py)
+    concurrency: 8                       # thread pool; raise on paid tier, lower to ~4 on free (15 RPM)
+    max_output_tokens: 300               # ~50-100 word paragraph
+    cache_file: data/v10_nl_cache.json   # resumable: image path -> NL (never re-bill on rerun)
+    block_none: true                     # BLOCK_NONE safety on the 4 adjustable cats (NSFW captioning)
 
 dataset:
   min_resolution: 1280            # v10: floor (curate already gated; build backstop). <1280 upscales too hard at 1536

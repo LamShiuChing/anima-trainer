@@ -26,11 +26,17 @@ not trained.**
   metrics to `data/v10_manifest.csv`; `--calibrate N` prints percentiles. ⚠️ **Thresholds (`SHARP_MIN/FFT_MIN/
   JPEG_Q_MIN/BLOCK_MAX`) are placeholders (0/0/0/1e9) until CALIBRATED** from the real distribution (Task 4, user-run).
   Note: `blockiness` is *negative* for clean photos (compressed pushes it up); raw JPEGs ~q90 so real filtering = sharp+fft.
-- **Captions `src/v10_caption.py`** = `masterpiece, best quality, score_7, <rating>, <RAM++ tags>`. **RAM++** =
-  real-photo tagger (NOT booru/anime WD14, NOT Gemini, NO realism anchor). Base quality tokens reuse the base's strongest
-  priors (free inference dial). Falconsai = rating; **WD14 kept ONLY as the underage drop-gate** (legal, non-negotiable;
-  tags discarded). ⚠️ tradeoff: tag-only underuses the Qwen3 LLM TE (re-add a short NL caption next run if mushy);
-  RAM++ weak on explicit NSFW detail. Build = **reuse `src/04_build_dataset.py`** (path-driven via pipeline.yaml).
+- **Captions** = `masterpiece, best quality, score_7, <rating>, <RAM++ tags>, <Gemini NL paragraph>`. Two stages:
+  - `src/v10_caption.py` (stage 3): **RAM++** real-photo tagger (NOT booru/anime WD14, NOT anchor) + base quality
+    tokens (reuse base priors, free inference dial) + Falconsai rating; **WD14 kept ONLY as the underage drop-gate**
+    (legal, non-negotiable; tags discarded). Writes `caption` (= quality+rating+tags).
+  - `src/v10_caption_nl.py` (stage 3b): **Gemini NL paragraph appended** (ported from the user's `lenstag-ai` app:
+    gemini-3-flash-preview, "detailed literal caption — subject/composition/lighting/colors/textures/mood/technical",
+    50–100 words). Fixes tag-only being too simple (RAM++ alone = flat keyword bag → underuses Qwen3 LLM TE). REUSES
+    the RAM++ run (snapshots `caption_tags`, rebuilds `caption = tags + NL`; idempotent). Thread pool + resumable
+    cache (`data/v10_nl_cache.json`). **BLOCK_NONE → captions NSFW fine** (verified; ~45% of set is explicit).
+    ⚠️ Gemini 3 = THINKING model → `ThinkingConfig(thinking_budget=0)` or thinking tokens truncate the caption.
+  - Build = **reuse `src/04_build_dataset.py`** (path-driven). Re-run build + re-zip after stage 3b.
 - **Train** `outputs/anima_realism_ft_v10_train_config.toml`: base warm-start, **lr 6e-6**, **50 epochs**,
   **save_every_n_epochs=5** (10 ckpts ~42GB), adamw_optimi fp32, freeze Qwen3 (`llm_adapter_lr=0`), full-FT (no [adapter]),
   AR 0.66–1.5. `scripts/run_v10_train.sh` + `scripts/vast_fetch_v10.sh` (dataset only — base DiT comes from vast_setup.sh).

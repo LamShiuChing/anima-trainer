@@ -1,0 +1,11 @@
+# diffusion-pipe dataset config (Anima full finetune, images only)
+resolutions = [1536]
+enable_ar_bucket = true
+min_ar = 0.66
+max_ar = 1.5
+num_ar_buckets = 7
+frame_buckets = [1]
+
+[[directory]]
+path = '/workspace/anima/data/dataset'
+num_repeats = 1

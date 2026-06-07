@@ -29,11 +29,11 @@ MIN_AR, MAX_AR = 0.66, 1.5
 ANALYSIS_LONG = 512          # sharpness measured on a 512px-long copy (scale-aware, comparable)
 FFT_CUTOFF = 0.25           # high-freq band starts at 0.25 * Nyquist
 
-# --- thresholds (CALIBRATED in a later task; placeholders until then) ---
-SHARP_MIN = 0.0             # scale-aware Laplacian variance floor      (set from --calibrate)
-FFT_MIN = 0.0              # FFT high-freq energy ratio floor          (set from --calibrate)
-JPEG_Q_MIN = 0             # drop JPEGs below this estimated quality    (set from --calibrate; e.g. 85)
-BLOCK_MAX = 1e9            # drop above this blockiness                 (set from --calibrate)
+# --- thresholds (CALIBRATED 2026-06-06 on a 120-img sample of data/raw; gentle ~p10/p90 cuts) ---
+SHARP_MIN = 190.0           # ~p10 sharp (drop softest ~10%); raise to 345 (p25) for a stricter/smaller set
+FFT_MIN = 0.52             # ~p5-p10 fft_hf (drop softest/upscaled tail; metric range is narrow 0.41-0.76)
+JPEG_Q_MIN = 70            # ~p10; NOT 85 — raw is social-media JPEG (median q83), 85 would drop ~60%
+BLOCK_MAX = 1.6            # ~p90-p95 blockiness (drop blockiest/most-compressed tail)
 
 # Standard JPEG luminance quantization base table (ITU-T T.81 Annex K.1)
 STD_LUMA = [
@@ -128,14 +128,21 @@ def _to_gray(path):
     return img
 
 
-def scale_aware_sharpness(gray):
-    """Laplacian variance on a fixed-size (512px-long) downscale -> comparable across resolutions."""
+def _analysis_small(gray):
+    """Downscale to a fixed 512px-long float64 copy -> scale-comparable AND cheap for
+    sharpness + FFT (a full-res 2D FFT on a 6k image is seconds/image; on the 512 copy it is ms)."""
     import cv2
     import numpy as np
     h, w = gray.shape
     nw, nh = analysis_resize_dims(w, h)
     small = cv2.resize(gray, (nw, nh), interpolation=cv2.INTER_AREA) if (nw, nh) != (w, h) else gray
-    return float(cv2.Laplacian(small.astype(np.float64), cv2.CV_64F).var())
+    return small.astype(np.float64)
+
+
+def scale_aware_sharpness(gray):
+    """Laplacian variance on the fixed-size analysis copy -> comparable across resolutions."""
+    import cv2
+    return float(cv2.Laplacian(_analysis_small(gray), cv2.CV_64F).var())
 
 
 def jpeg_qtable_luma(path):
@@ -149,12 +156,16 @@ def jpeg_qtable_luma(path):
         return None
 
 
-def metrics_for(path, w, h):
-    """All quality metrics for one image (already known to be >= floor + readable)."""
+def metrics_for(path, w=None, h=None):
+    """All quality metrics for one image. Sharpness + FFT run on a fixed 512px analysis copy
+    (scale-comparable + fast); blockiness on FULL-res (the 8px JPEG block grid must stay intact).
+    w/h are accepted for call-site convenience but recomputed from the decoded array."""
+    import cv2
     gray = _to_gray(path)
+    small = _analysis_small(gray)
     return {
-        "sharp": scale_aware_sharpness(gray),
-        "fft_hf": fft_highfreq_ratio(gray),
+        "sharp": float(cv2.Laplacian(small, cv2.CV_64F).var()),
+        "fft_hf": fft_highfreq_ratio(small),
         "blockiness": blockiness(gray),
         "jpeg_q": jpeg_quality_estimate(jpeg_qtable_luma(path)),
     }
@@ -200,10 +211,12 @@ def _load_stage1():
 
 
 def _gather(s1):
-    """Floor + readability + phash, returning survivor items (pre-dedup, pre-quality)."""
+    """Floor + readability + phash, returning survivor items (pre-dedup, pre-quality). Shows progress."""
+    from tqdm import tqdm
     common = s1.common
+    paths = list(common.iter_images(RAW))      # cheap: just paths (no decode) -> gives tqdm a total
     items, skipped = [], 0
-    for p in common.iter_images(RAW):
+    for p in tqdm(paths, desc="scan floor+phash", unit="img", dynamic_ncols=True):
         try:
             if s1.is_corrupt(p):
                 continue
@@ -212,30 +225,51 @@ def _gather(s1):
                 continue
             ph = s1.phash(p)
         except Exception as e:
-            print(f"  skip (unreadable) {p.name}: {e}")
+            tqdm.write(f"  skip (unreadable) {p.name}: {e}")
             skipped += 1
             continue
         items.append({"path": p, "phash": ph, "w": w, "h": h, "px": w * h})
+    print(f"scan: {len(items)} survivors >= {MIN_SHORT}px of {len(paths)} raw files "
+          f"({skipped} unreadable)", flush=True)
     return items, skipped
 
 
 def calibrate(n):
-    """Sample n survivors, print metric percentiles to pick thresholds. Writes nothing."""
+    """Sample ~n readable >=floor images DIRECTLY (no full phash scan / no dedup) and print metric
+    percentiles to pick thresholds. Writes nothing. Fast: strides across the pool + early-stops at n."""
     import numpy as np
+    from tqdm import tqdm
     s1 = _load_stage1()
-    items, _ = _gather(s1)
-    step = max(1, len(items) // n)
-    sample = items[::step][:n]
+    common = s1.common
+    paths = list(common.iter_images(RAW))               # cheap: just paths (no decode)
+    step = max(1, len(paths) // (n * 3))                 # spread across pool; ~3x candidates (floor cuts ~half)
+    candidates = paths[::step]
+    print(f"calibrate: {len(paths)} raw files; probing every {step}th (~{len(candidates)}) "
+          f"to collect {n} metric samples...", flush=True)
     cols = {"sharp": [], "fft_hf": [], "blockiness": [], "jpeg_q": []}
-    for it in sample:
+    bar = tqdm(candidates, desc="calibrate", unit="img", dynamic_ncols=True)
+    for p in bar:
+        if len(cols["sharp"]) >= n:
+            break
         try:
-            m = metrics_for(it["path"], it["w"], it["h"])
+            if s1.is_corrupt(p):
+                continue
+            w, h = s1.image_size(p)
+            if min(w, h) < MIN_SHORT:
+                continue
+            m = metrics_for(p)
         except Exception as e:
-            print(f"  skip {it['path'].name}: {e}")
+            tqdm.write(f"  skip {p.name}: {e}")
             continue
         for k in cols:
             cols[k].append(m[k])
-    print(f"\ncalibration on {len(cols['sharp'])} sampled images (of {len(items)} survivors >= {MIN_SHORT}px):")
+        bar.set_postfix(kept=len(cols["sharp"]))
+    bar.close()
+    n_ok = len(cols["sharp"])
+    if n_ok == 0:
+        print(f"no readable images >= {MIN_SHORT}px in the sample — check data/raw", flush=True)
+        return
+    print(f"\ncalibration on {n_ok} sampled images:")
     for k, vals in cols.items():
         a = np.array(vals, dtype=float)
         pcts = {p: float(np.percentile(a, p)) for p in (5, 10, 25, 50, 75, 90, 95)}
@@ -256,16 +290,19 @@ def main():
         shutil.rmtree(CLEAN)
     CLEAN.mkdir(parents=True, exist_ok=True)
 
+    from tqdm import tqdm
     items, skipped = _gather(s1)
     kept_items = _dedup_local(items, HAMMING)
+    print(f"dedup: {len(kept_items)} kept of {len(items)} (removed {len(items) - len(kept_items)} near-dups). "
+          f"Computing quality metrics...", flush=True)
 
     rows, kept, dropped = [], 0, 0
-    for it in kept_items:
+    for it in tqdm(kept_items, desc="metrics+crop", unit="img", dynamic_ncols=True):
         p, w, h = it["path"], it["w"], it["h"]
         try:
             m = metrics_for(p, w, h)
         except Exception as e:
-            print(f"  skip (metric fail) {p.name}: {e}")
+            tqdm.write(f"  skip (metric fail) {p.name}: {e}")
             skipped += 1
             continue
         reason = quality_reject(m)
@@ -284,7 +321,7 @@ def main():
             dest = CLEAN / f"{p.stem}.jpg"
             im.save(dest, quality=95)
         except Exception as e:
-            print(f"  skip (save failed) {p.name}: {e}")
+            tqdm.write(f"  skip (save failed) {p.name}: {e}")
             skipped += 1
             continue
         cw, ch = im.size

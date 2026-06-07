@@ -5,10 +5,11 @@
 # and the two v10 tomls (this repo). Log -> /workspace/train_v10.log.
 set -euo pipefail
 BASE=/workspace/anima
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # repo root = parent of scripts/ (no matter where it's cloned)
 
 mkdir -p "$BASE/outputs"
-cp "$BASE/repo/outputs/anima_realism_ft_v10_dataset_config.toml" "$BASE/outputs/"
-cp "$BASE/repo/outputs/anima_realism_ft_v10_train_config.toml" "$BASE/outputs/"
+cp "$REPO/outputs/anima_realism_ft_v10_dataset_config.toml" "$BASE/outputs/"
+cp "$REPO/outputs/anima_realism_ft_v10_train_config.toml" "$BASE/outputs/"
 
 test -f "$BASE/models/anima-base-v1.0.safetensors" || { echo "MISSING base DiT -> run scripts/vast_setup.sh"; exit 1; }
 test -f "$BASE/models/qwen_image_vae.safetensors"  || { echo "MISSING VAE -> run scripts/vast_setup.sh"; exit 1; }

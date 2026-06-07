@@ -53,7 +53,12 @@ model needs a **"light touch" due to existing diversity** (= the concepts we kee
 (`masterpiece, best quality, score_7, safe, [char] [tags]`). Author infer: steps 30–50, **CFG 4–5**, sampler `er_sde`/
 `euler_a`/`dpmpp_2m_sde_gpu`, scheduler `beta57`, res ≤1536 — matches our prior low-CFG finding.
 
-**PROGRESS (2026-06-06): curate DONE (2069 kept), Gemini caption layer BUILT + smoke-verified (rich captions).**
+**PROGRESS (2026-06-06): curate DONE (2069 kept), Gemini caption layer BUILT + smoke-verified (rich captions).
+Trigger-word CHARACTER embed wired:** 42 AI-gen char imgs (`data/r`) staged to `data/v10_char/` (trigger
+`reiko`→`rrr`, AR-cropped to fit 0.66–1.5) → oversampled as a 2nd `[[directory]]` (`num_repeats 4`) via
+`scripts/v10_stage_char.py` + `04_build_dataset` extra_dirs + `v10_zip.py`/`vast_fetch_v10.sh` (bundle
+`dataset/` + `char/`). No separate LoRA — embedded in the full-FT. ⚠️ eyeball the 20 cropped char imgs (tall
+ones may clip head/feet). Char captions are booru-style + lead with `rrr` (not the v10 enum format — fine for a trigger).
 **NEXT (user-run runtime, local 4080 then Vast):** (1) ✅ curate done (`data/v10_clean`, 2069). (2) `python
 src/v10_caption_gemini.py` (Gemini structured caption; resumable cache; uses GEMINI_API_KEY). (3) `python
 src/04_build_dataset.py` → `python scripts/v10_zip.py` → upload `data/v10_dataset.zip` to Drive. (4) Rent 96GB Vast →

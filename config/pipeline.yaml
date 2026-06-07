@@ -24,7 +24,7 @@ caption:                         # v10: GEMINI-ONLY structured caption (no RAM++
     max_output_tokens: 800               # JSON: enums + ~25 tags + 50-100 word paragraph
     cache_file: data/v10_caption_cache.json   # resumable: image path -> raw Gemini JSON (never re-bill on rerun)
     block_none: true                     # BLOCK_NONE on the 4 adjustable cats (captions NSFW)
-    quality_prefix: "masterpiece, best quality"   # base-native quality tokens lead every caption (no score_7)
+    # quality is Gemini-judged per-image (v7 booru ladder enum), not a fixed prefix. rating also Gemini-judged.
 
 dataset:
   min_resolution: 1280            # v10: floor (curate already gated; build backstop). <1280 upscales too hard at 1536

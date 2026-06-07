@@ -33,6 +33,8 @@ LOG = common.setup_logging()
 # v7 enum rubric, real-photo subset. `quality` is handled by the fixed prefix; `rating` stays here
 # (4-level booru ladder, richer than Falconsai's binary -> falls back to the manifest rating_tag).
 VOCAB = {
+    "quality": ["masterpiece", "best quality", "high quality", "normal quality",
+                "low quality", "worst quality"],   # Gemini judges per-image (was a fixed prefix)
     "shot_type": ["extreme close-up", "close-up", "portrait", "upper body", "cowboy shot",
                   "full body", "wide shot"],
     "view": ["front view", "three-quarter view", "profile view", "back view",
@@ -66,18 +68,18 @@ VOCAB = {
                      "gym", "car", "party"],
     "rating": ["safe", "suggestive", "explicit"],     # simple, prefix-free (no "rating:" / no booru ladder)
 }
-SINGLE_SLOTS = ("shot_type", "view", "camera_angle", "capture_style", "color_grade", "camera_lens",
-                "depth_of_field", "expression", "body_type", "breast_size", "ethnicity", "skin_tone",
-                "setting_type", "rating")
+SINGLE_SLOTS = ("quality", "shot_type", "view", "camera_angle", "capture_style", "color_grade",
+                "camera_lens", "depth_of_field", "expression", "body_type", "breast_size",
+                "ethnicity", "skin_tone", "setting_type", "rating")
 ARRAY_SLOTS = ("lighting", "condition")
 ARRAY_MAX = 2
 TAGS_MAX = 30
-# caption assembly order for the enum props (quality prefix + rating lead; tags + NL trail)
+# quality + rating LEAD every caption; these enum props follow; tags + NL trail.
 ENUM_ORDER = ("shot_type", "view", "camera_angle", "capture_style", "lighting", "condition",
               "color_grade", "camera_lens", "depth_of_field", "expression", "body_type",
               "breast_size", "ethnicity", "skin_tone", "setting_type")
-# rating REQUIRED -> Gemini always emits it (no Falconsai fallback needed in the Gemini-only design)
-REQUIRED = ["shot_type", "capture_style", "rating", "tags", "description"]
+# quality + rating REQUIRED -> Gemini always emits them
+REQUIRED = ["quality", "shot_type", "capture_style", "rating", "tags", "description"]
 
 MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
 
@@ -112,7 +114,9 @@ def build_prompt():
     return (
         "You are labeling a REAL photograph to train a photorealistic image model. Return JSON only, "
         "matching the schema. For each enum field choose the single value that best fits (omit an "
-        "optional field if it does not clearly apply). 'tags': 8-30 concise lowercase real-world "
+        "optional field if it does not clearly apply). 'quality': judge the photo's technical quality "
+        "honestly (masterpiece = exceptional sharpness/lighting/detail; down to low/worst quality). "
+        "'tags': 8-30 concise lowercase real-world "
         "keywords (subjects, clothing, objects, accessories, setting, attributes) — NOT a sentence. "
         "'description': a detailed factual paragraph (50-100 words) in this order: the subject (how "
         "many people, that they are adults, apparent gender); the face (shape, eyes, lips, nose, "
@@ -145,9 +149,10 @@ def coerce(raw, vocab=VOCAB):
     return out
 
 
-def assemble(parts, quality_prefix, fallback_rating="safe"):
-    """Full caption: quality prefix, rating, enum props, tags, [watermark], NL paragraph."""
-    p = [quality_prefix.strip(), parts.get("rating") or fallback_rating]
+def assemble(parts, fallback_quality="best quality", fallback_rating="safe"):
+    """Full caption: quality, rating, enum props, tags, [watermark], NL paragraph.
+    quality + rating are Gemini-judged enums (lead the caption); fallbacks cover a rare omission."""
+    p = [parts.get("quality") or fallback_quality, parts.get("rating") or fallback_rating]
     for k in ENUM_ORDER:
         if k in ARRAY_SLOTS:
             p += parts.get(k, [])
@@ -246,7 +251,6 @@ def main():
 
     cfg = common.load_config()
     nl_cfg = cfg["caption"]["nl"]
-    quality_prefix = nl_cfg["quality_prefix"]
     cache_file = nl_cfg["cache_file"]
     manifest = cfg["paths"]["manifest"]
     rows = common.read_manifest(manifest)
@@ -264,8 +268,7 @@ def main():
         except Exception as e:
             raise RuntimeError(f"Gemini pre-flight failed: {e!r}. Fix key/model before the full run.") from e
         cache[todo[0]["path"]] = sample
-        LOG.info("pre-flight OK. sample caption:\n  %s",
-                 assemble(coerce(sample), quality_prefix)[:300])
+        LOG.info("pre-flight OK. sample caption:\n  %s", assemble(coerce(sample))[:300])
 
     ok = empty = 0
     bar = tqdm(total=len(kept), desc="gemini-caption", unit="img", dynamic_ncols=True)
@@ -301,7 +304,7 @@ def main():
 
     for r in kept:                      # rebuild captions from cached JSON (idempotent)
         parts = coerce(cache.get(r["path"], {}))
-        r["caption"] = assemble(parts, quality_prefix)
+        r["caption"] = assemble(parts)
     common.write_manifest(manifest, rows)
     LOG.info("Stage 3b done. ok=%d empty/refused=%d (of %d). captions rebuilt -> %s. "
              "Next: python src/04_build_dataset.py", ok, empty, len(kept), manifest)

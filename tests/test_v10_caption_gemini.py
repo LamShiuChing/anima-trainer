@@ -35,25 +35,31 @@ def test_coerce_clamps_arrays_and_dedups_tags():
 
 
 def test_assemble_full_order():
-    parts = {"shot_type": "full body", "view": "front view", "rating": "safe",
+    parts = {"quality": "masterpiece", "shot_type": "full body", "view": "front view", "rating": "safe",
              "lighting": ["natural daylight"], "condition": [], "setting_type": "city street",
              "tags": ["woman", "dress"], "has_watermark": False,
              "nl": "A woman in a dress on a street"}
-    out = g.assemble(parts, "masterpiece, best quality")
-    assert out == ("masterpiece, best quality, safe, full body, front view, "
+    out = g.assemble(parts)
+    assert out == ("masterpiece, safe, full body, front view, "
                    "natural daylight, city street, woman, dress, A woman in a dress on a street")
 
 
-def test_assemble_rating_fallback_and_watermark():
+def test_assemble_quality_and_rating_fallback_and_watermark():
     parts = g.coerce({"shot_type": "portrait", "tags": ["man"], "has_watermark": True,
                       "description": "A man."})
-    out = g.assemble(parts, "masterpiece, best quality", fallback_rating="safe")
-    # no rating from model -> fallback; watermark appended before NL
-    assert out.startswith("masterpiece, best quality, safe, portrait, ")
+    out = g.assemble(parts, fallback_quality="best quality", fallback_rating="safe")
+    # no quality/rating from model -> fallbacks lead; watermark appended before NL
+    assert out.startswith("best quality, safe, portrait, ")
     assert ", man, watermark, A man" in out
 
 
-def test_build_schema_requires_rating():
+def test_coerce_validates_quality():
+    assert g.coerce({"quality": "masterpiece"})["quality"] == "masterpiece"
+    assert g.coerce({"quality": "amazing"})["quality"] == ""        # out-of-vocab dropped
+
+
+def test_build_schema_requires_quality_and_rating():
     schema = g.build_schema()
-    assert "rating" in schema["required"]
+    assert "quality" in schema["required"] and "rating" in schema["required"]
     assert schema["properties"]["tags"]["type"] == "array"
+    assert schema["properties"]["quality"]["enum"][0] == "masterpiece"

@@ -9,3 +9,7 @@ frame_buckets = [1]
 [[directory]]
 path = '/workspace/anima/data/dataset'
 num_repeats = 1
+
+[[directory]]
+path = '/workspace/anima/data/char'
+num_repeats = 4

@@ -27,14 +27,15 @@ not trained.**
   JPEG_Q_MIN/BLOCK_MAX`) are placeholders (0/0/0/1e9) until CALIBRATED** from the real distribution (Task 4, user-run).
   Note: `blockiness` is *negative* for clean photos (compressed pushes it up); raw JPEGs ~q90 so real filtering = sharp+fft.
 - **Captions = GEMINI-ONLY structured** (`src/v10_caption_gemini.py`). One `gemini-3-flash-preview` call per image
-  (`response_schema` JSON) returns three layers: the **v7 enum rubric** (real-photo subset: shot_type/view/
+  (`response_schema` JSON) returns three layers: the **v7 enum rubric** (real-photo subset: quality/shot_type/view/
   camera_angle/capture_style/lighting/condition/color_grade/camera_lens/depth_of_field/expression/body_type/
   breast_size/ethnicity/skin_tone/setting_type) + a **real-photo tag list** + a **50–100 word NL paragraph**.
-  Assembled = `masterpiece, best quality, <rating>, <enums>, <tags>[, watermark], <paragraph>`. Prompt/structure
+  Assembled = `<quality>, <rating>, <enums>, <tags>[, watermark], <paragraph>`. Prompt/structure
   adapted from the user's **lenstag-ai** app + the v7 rubric. **RAM++, WD14, Falconsai all DROPPED** (RAM++ = noisy flat
   keywords; WD14 underage gate = anime tagger that false-positives on real adult photos and isn't a real-photo minor
-  detector → removed on the owner's assertion the set is all legal adults). **rating = simple `safe`/`suggestive`/
-  `explicit`** (no `rating:` prefix; REQUIRED in schema). **`score_7` dropped** from the quality prefix.
+  detector → removed on the owner's assertion the set is all legal adults). **`quality` Gemini-judged per-image** (v7
+  booru ladder `masterpiece..worst quality`, REQUIRED) — NOT a fixed prefix, gives real contrast; no `score_7`.
+  **rating = simple `safe`/`suggestive`/`explicit`** (no `rating:` prefix; REQUIRED).
   **BLOCK_NONE → captions NSFW fine** (verified; ~45% explicit). ⚠️ Gemini 3 = THINKING model →
   `ThinkingConfig(thinking_budget=0)` or thinking tokens truncate the JSON. Thread pool + resumable cache
   (`data/v10_caption_cache.json`, path→raw JSON), idempotent rebuild. Build = **reuse `src/04_build_dataset.py`**;
